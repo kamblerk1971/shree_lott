@@ -1,0 +1,88 @@
+# =========================
+# Executables & Packages
+# =========================
+*.exe
+*.apk
+*.zip
+
+# =========================
+# Miscellaneous
+# =========================
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# =========================
+# IntelliJ / Android Studio
+# =========================
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# =========================
+# VS Code (optional)
+# Uncomment if you DON'T want to track VS Code settings
+# =========================
+#.vscode/
+
+# =========================
+# Flutter / Dart / Pub
+# =========================
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
+
+# =========================
+# Symbolication
+# =========================
+app.*.symbols
+
+# =========================
+# Obfuscation
+# =========================
+app.*.map.json
+
+# =========================
+# Android Build Outputs
+# =========================
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# =========================
+# iOS Build Outputs
+# =========================
+/ios/Pods/
+/ios/Runner.xcworkspace/
+/ios/Runner.xcodeproj/project.xcworkspace/
+/ios/build/
+
+# =========================
+# MacOS / Windows / Linux Build
+# =========================
+/macos/Flutter/ephemeral/
+/linux/flutter/ephemeral/
+/windows/flutter/ephemeral/
+
+# =========================
+# Common Output Folders
+# =========================
+dist/
+release/
+output/

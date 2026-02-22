@@ -1,0 +1,4380 @@
+import 'dart:convert';
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:get/get.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+import 'package:http/http.dart' as http;
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
+import 'package:shreelott/consts/api_consts.dart' hide ApiConstants;
+import 'package:shreelott/widgets/show_transaction_dialog.dart';
+
+import '../../controller/home_controller.dart';
+
+// ===================== MODEL =====================
+import 'dart:ui';
+
+import 'package:flutter/material.dart';
+
+import '../../controller/wallet_controller.dart';
+import '../../models/range_data.dart';
+import '../../service/ticket_print_service.dart';
+import '../../widgets/show_advanced_draw_dialog.dart';
+import '../../widgets/show_result_dialog.dart';
+
+import 'package:flutter/material.dart';
+
+class BettingGridModel {
+  static const double cellW = 78;
+  static const double cellH = 34;
+  static const double headerH = 34;
+
+  bool even = false;
+  bool odd = false;
+  bool high = false;
+  bool low = true;
+  bool block = false;
+
+  int seriesStart = 0;
+  int visibleStart = 0;
+  int visibleEnd = 99;
+
+  int selectedSeries = 0;
+  int selectedRange = 0;
+
+  Set<int> selectedSeries_Set = {0};
+  Set<int> selectedRange_Set = {0};
+
+  final Map<String, TextEditingController> ctrls = {};
+  final Map<int, TextEditingController> headerCtrls = {};
+  final Map<int, TextEditingController> rowCtrls = {};
+
+  int qty = 0;
+  double amount = 0;
+
+  late List<RangeData> ranges;
+  final List<double> pointOptions = [2, 4, 10, 20, 40];
+  double selectedPoint = 2;
+  int limitValue = 0;
+  Set<int> selectedPtSet = {};
+
+  BettingGridModel() {
+    ranges = [
+      RangeData('0000-0099', const Color(0xFFFF385C), 0),
+      RangeData('0100-0199', const Color(0xFF717171), 0),
+      RangeData('0200-0299', const Color(0xFF0077B6), 0),
+      RangeData('0300-0399', const Color(0xFF00A699), 2),
+      RangeData('0400-0499', const Color(0xFFD70466), 4),
+      RangeData('0500-0599', const Color(0xFF9333EA), 10),
+      RangeData('0600-0699', const Color(0xFFF77F00), 20),
+      RangeData('0700-0799', const Color(0xFF7CB342), 40),
+      RangeData('0800-0899', const Color(0xFF5E35B1), 0),
+      RangeData('0900-0999', const Color(0xFF00ACC1), 0),
+    ];
+    selectedPoint = ranges[3].points;
+  }
+
+  final List<Color> colors = [
+    const Color(0xFFFF385C),
+    const Color(0xFF717171),
+    const Color(0xFF0077B6),
+    const Color(0xFF00A699),
+    const Color(0xFFD70466),
+    const Color(0xFF9333EA),
+    const Color(0xFFF77F00),
+    const Color(0xFF7CB342),
+    const Color(0xFF5E35B1),
+    const Color(0xFF00ACC1),
+  ];
+
+  // --- CORE DRY HELPER ---
+
+  /// Internal method to handle all bulk updates (Cell, Row, Col).
+  /// [predicate] allows us to filter which numbers in the range get updated.
+  // void _executeBulkUpdate(
+  //   int qty,
+  //   BuildContext context,
+  //   bool Function(int number) predicate,
+  // ) {
+  //   if (qty <= 0) return;
+  //   if (selectedPoint == 0.0) {
+  //     showSelectPointSnackBar(context);
+  //     return;
+  //   }
+  //
+  //   double remaining = limitValue.toDouble();
+  //   bool updated = false;
+  //
+  //   outer:
+  //   for (final s in selectedSeries_Set) {
+  //     for (final r in selectedRange_Set) {
+  //       final base = s * 1000 + r * 100;
+  //       for (int i = 0; i < 100; i++) {
+  //         final n = base + i;
+  //
+  //         if (!predicate(n)) continue; // Custom logic (Row/Col check)
+  //         if (!_allow(n)) continue; // Odd/Even check
+  //
+  //         final ctrl = _getCtrl(s, r, n);
+  //         final oldQty = int.tryParse(ctrl.text) ?? 0;
+  //         final diffUse = (qty - oldQty) * selectedPoint;
+  //
+  //         if (diffUse <= 0) continue;
+  //         if (remaining < diffUse) {
+  //           showLowBalanceSnackBar(context);
+  //           break outer;
+  //         }
+  //
+  //         ctrl.text = qty.toString();
+  //         remaining -= diffUse;
+  //         updated = true;
+  //       }
+  //     }
+  //   }
+  //
+  //   if (updated) {
+  //     limitValue = remaining.toInt();
+  //     recalc();
+  //   }
+  // }
+
+  /// Switches the view to a specific series and resets the visible range.
+  void focusSeries(int series) {
+    // 1. Update the active series index
+    selectedSeries = series;
+
+    // 2. Calculate the global starting point (e.g., Series 2 starts at 2000)
+    seriesStart = series * 1000;
+
+    // 3. Update the visible window based on the currently selected range index (0-9)
+    // If selectedRange is 0, visibleStart becomes 2000. If 1, it becomes 2100.
+    visibleStart = seriesStart + (selectedRange * 100);
+    visibleEnd = visibleStart + 99;
+
+    // 4. Reset temporary UI controllers
+    // Since the numbers in the grid changed, we clear the header/row
+    // "bulk input" controllers so they don't show values from the previous series.
+    headerCtrls.clear();
+    rowCtrls.clear();
+
+    // 5. Trigger a recalculation of totals for the new view
+    recalc();
+  }
+
+  // --- PUBLIC API ---
+
+  void applyRowValue(int row, String v, BuildContext context) {
+    final wallet = Get.find<WalletController>();
+
+    // ✅ Detect empty input first
+    final bool isEmpty = v.trim().isEmpty;
+    final int newQty = int.tryParse(v) ?? 0;
+
+    if (!isEmpty && newQty <= 0) return;
+
+    if (selectedPoint == 0.0) {
+      showSelectPointSnackBar(context);
+      return;
+    }
+
+    double totalRequired = 0.0;
+    double totalRefund = 0.0;
+
+    final List<int> targets = [];
+
+    // ================= STEP 1: Collect valid targets =================
+    for (final s in selectedSeries_Set) {
+      for (final r in selectedRange_Set) {
+        final base = s * 1000 + r * 100 + row * 10;
+
+        for (int c = 0; c < 10; c++) {
+          final n = base + c;
+
+          if (!_allow(n)) continue;
+          if (odd && n.isEven) continue;
+          if (even && n.isOdd) continue;
+
+          targets.add(n);
+        }
+      }
+    }
+
+    if (targets.isEmpty) return;
+
+    // ================= STEP 2: Calculate diff =================
+    for (final n in targets) {
+      final int oldQty = cellQty[n] ?? 0;
+
+      final int finalQty = isEmpty ? 0 : newQty;
+
+      final int diffQty = finalQty - oldQty;
+
+      if (diffQty > 0) {
+        totalRequired += diffQty * selectedPoint;
+      } else if (diffQty < 0) {
+        totalRefund += diffQty.abs() * selectedPoint;
+      }
+    }
+
+    // ================= STEP 3: Wallet check =================
+    if (totalRequired > 0 && !wallet.hasEnough(totalRequired)) {
+      showLowBalanceSnackBar(context);
+      return;
+    }
+
+    // ================= STEP 4: Apply wallet =================
+    if (totalRequired > 0) wallet.deduct(totalRequired);
+    if (totalRefund > 0) wallet.add(totalRefund);
+
+    // ================= STEP 5: Apply to cells =================
+    for (final n in targets) {
+      final int finalQty = isEmpty ? 0 : newQty;
+
+      cellQty[n] = finalQty;
+
+      final s = n ~/ 1000;
+      final r = (n % 1000) ~/ 100;
+
+      final ctrl = _getCtrl(s, r, n);
+      ctrl.text = finalQty == 0 ? "" : finalQty.toString();
+    }
+
+    recalc();
+
+    debugPrint(
+      "ROW DONE | Deduct=$totalRequired Refund=$totalRefund Wallet=${wallet.walletBalance.value}",
+    );
+  }
+
+  void applyColumnValue(int col, String v, BuildContext context) {
+    final wallet = Get.find<WalletController>();
+
+    // ✅ Detect empty input FIRST
+    final bool isEmpty = v.trim().isEmpty;
+    final int newQty = int.tryParse(v) ?? 0;
+
+    if (!isEmpty && newQty <= 0) return;
+
+    if (selectedPoint == 0.0) {
+      showSelectPointSnackBar(context);
+      return;
+    }
+
+    double totalRequired = 0.0;
+    double totalRefund = 0.0;
+
+    final List<int> targets = [];
+
+    // ================= BUILD TARGETS =================
+    for (final s in selectedSeries_Set) {
+      for (final r in selectedRange_Set) {
+        final base = s * 1000 + r * 100 + col;
+
+        for (int row = 0; row < 10; row++) {
+          final n = base + row * 10;
+
+          if (!_allow(n)) continue;
+          if (odd && n.isEven) continue;
+          if (even && n.isOdd) continue;
+
+          targets.add(n);
+        }
+      }
+    }
+
+    if (targets.isEmpty) return;
+
+    // ================= CALCULATE DIFF =================
+    for (final n in targets) {
+      final int oldQty = cellQty[n] ?? 0;
+
+      // ✅ If empty → treat as 0
+      final int finalQty = isEmpty ? 0 : newQty;
+
+      final int diffQty = finalQty - oldQty;
+
+      if (diffQty > 0) {
+        totalRequired += diffQty * selectedPoint;
+      } else if (diffQty < 0) {
+        totalRefund += diffQty.abs() * selectedPoint;
+      }
+    }
+
+    // ================= WALLET CHECK =================
+    if (totalRequired > 0 && !wallet.hasEnough(totalRequired)) {
+      showLowBalanceSnackBar(context);
+      return;
+    }
+
+    // ================= APPLY WALLET =================
+    if (totalRequired > 0) wallet.deduct(totalRequired);
+    if (totalRefund > 0) wallet.add(totalRefund);
+
+    // ================= APPLY TO CELLS =================
+    for (final n in targets) {
+      final int finalQty = isEmpty ? 0 : newQty;
+
+      cellQty[n] = finalQty;
+
+      final s = n ~/ 1000;
+      final r = (n % 1000) ~/ 100;
+
+      final ctrl = _getCtrl(s, r, n);
+
+      ctrl.text = finalQty == 0 ? "" : finalQty.toString();
+    }
+
+    recalc();
+
+    debugPrint(
+      "COLUMN DONE | Deduct=$totalRequired Refund=$totalRefund Wallet=${wallet.walletBalance.value}",
+    );
+  }
+
+  Set<int> _generateFP(int fullNumber) {
+    // Extract parts
+    final int series = fullNumber ~/ 100; // first 2 digits
+    final int lastTwo = fullNumber % 100; // last 2 digits
+
+    final int d1 = lastTwo ~/ 10;
+    final int d2 = lastTwo % 10;
+
+    final int p1 = (d1 + 5) % 10;
+    final int p2 = (d2 + 5) % 10;
+
+    final Set<int> result = {};
+
+    final List<int> firstOptions = [d1, p1];
+    final List<int> secondOptions = [d2, p2];
+
+    for (final a in firstOptions) {
+      for (final b in secondOptions) {
+        result.add(series * 100 + a * 10 + b);
+        result.add(series * 100 + b * 10 + a);
+      }
+    }
+
+    return result;
+  }
+
+  final walletController = Get.find<WalletController>();
+  final Map<int, int> cellQty = {}; // stores real qty per number
+
+  // void onCellChanged(int n, String v, BuildContext context, bool isFPChecked) {
+  //   print("\n================= onCellChanged START =================");
+  //
+  //   final int qty = int.tryParse(v) ?? 0;
+  //
+  //   /// you have qty why u calculating the diff this is so common mistake made by u
+  //
+  //   print("Input Number      : $n");
+  //   print("Input Qty         : $qty");
+  //   print("Selected Point    : $selectedPoint");
+  //   print("FP Mode           : $isFPChecked");
+  //   print("Even: $even | Odd: $odd");
+  //   print("Series Selected   : $selectedSeries_Set");
+  //   print("Range Selected    : $selectedRange_Set");
+  //
+  //   if (selectedPoint == 0.0) {
+  //     print("❌ Selected point is 0.0");
+  //     showSelectPointSnackBar(context);
+  //     return;
+  //   }
+  //
+  //   final wallet = Get.find<WalletController>();
+  //   print("Wallet Before     : ${wallet.walletBalance.value}");
+  //
+  //   // STEP 1: BUILD RAW TARGETS
+  //   Set<int> rawTargets = isFPChecked ? _generateFP(n) : {n};
+  //
+  //   print("Raw Targets       : $rawTargets");
+  //
+  //   // STEP 2: FILTER SERIES & RANGE
+  //   Set<int> filteredTargets = rawTargets.where((num) {
+  //     final s = num ~/ 1000;
+  //     final r = (num % 1000) ~/ 100;
+  //
+  //     return selectedSeries_Set.contains(s) && selectedRange_Set.contains(r);
+  //   }).toSet();
+  //
+  //   print("After Series/Range: $filteredTargets");
+  //
+  //   // STEP 3: ODD / EVEN FILTER
+  //   if (odd && !even) {
+  //     filteredTargets = filteredTargets.where((e) => e.isOdd).toSet();
+  //   } else if (even && !odd) {
+  //     filteredTargets = filteredTargets.where((e) => e.isEven).toSet();
+  //   }
+  //
+  //   print("After Odd/Even    : $filteredTargets");
+  //
+  //   // STEP 4: _allow FILTER
+  //   filteredTargets = filteredTargets.where((e) => _allow(e)).toSet();
+  //
+  //   print("After _allow      : $filteredTargets");
+  //
+  //   if (filteredTargets.isEmpty) {
+  //     print("❌ No valid targets. EXIT.");
+  //     return;
+  //   }
+  //
+  //   // STEP 5: CALCULATE TOTAL REQUIRED
+  //   double totalRequired = 0.0;
+  //   final Map<int, int> oldQtyMap = {};
+  //
+  //   for (final target in filteredTargets) {
+  //     final s = target ~/ 1000;
+  //     final r = (target % 1000) ~/ 100;
+  //
+  //     final ctrl = _getCtrl(s, r, target);
+  //
+  //     final int oldQty = int.tryParse(ctrl.text) ?? 0;
+  //
+  //     oldQtyMap[target] = oldQty;
+  //
+  //     final int diffQty = qty - oldQty;
+  //     final double cellAmount = diffQty * selectedPoint;
+  //
+  //     print(
+  //       "Target: $target | Old: $oldQty | New: $qty | Diff: $diffQty | CellAmount: $cellAmount",
+  //     );
+  //
+  //     if (diffQty > 0) {
+  //       totalRequired += cellAmount;
+  //     }
+  //   }
+  //
+  //   print("Total Required    : $totalRequired");
+  //
+  //   // STEP 6: CHECK & DEDUCT
+  //   if (totalRequired > 0) {
+  //     print("Checking wallet...");
+  //
+  //     if (!wallet.hasEnough(totalRequired)) {
+  //       print("❌ Low balance. Needed: $totalRequired");
+  //       showLowBalanceSnackBar(context);
+  //       return;
+  //     }
+  //
+  //     wallet.deduct(totalRequired);
+  //     print("✅ Deducted       : $totalRequired");
+  //   }
+  //
+  //   // STEP 7: APPLY CHANGES
+  //   for (final target in filteredTargets) {
+  //     final s = target ~/ 1000;
+  //     final r = (target % 1000) ~/ 100;
+  //
+  //     final ctrl = _getCtrl(s, r, target);
+  //     final int oldQty = oldQtyMap[target] ?? 0;
+  //
+  //     final int diffQty = qty - oldQty;
+  //
+  //     if (diffQty < 0) {
+  //       final double refund = diffQty.abs() * selectedPoint;
+  //       wallet.add(refund);
+  //       print("Refunded          : $refund for $target");
+  //     }
+  //
+  //     ctrl.text = qty == 0 ? "" : qty.toString();
+  //   }
+  //
+  //   print("Wallet After      : ${wallet.walletBalance.value}");
+  //   print("================= onCellChanged END =================\n");
+  //
+  //   recalc();
+  // }
+
+  void onCellChanged(int n, String v, BuildContext context, bool isFPChecked) {
+    debugPrint("\n========== onCellChanged START ==========");
+
+    final int newQty = int.tryParse(v) ?? 0;
+
+    if (selectedPoint == 0.0) {
+      showSelectPointSnackBar(context);
+      return;
+    }
+
+    final wallet = Get.find<WalletController>();
+    debugPrint("Wallet Before : ${wallet.walletBalance.value}");
+
+    final Set<int> rawTargets = {};
+    final List<int> multipliers = [1, 1, 2, 3, 5, 5, 10, 20, 25, 25];
+
+    // ==========================================================
+    // STEP 1: BUILD TARGETS
+    // ==========================================================
+
+    for (final s in selectedSeries_Set) {
+      // =======================
+      // ✅ FP LOGIC
+      // =======================
+      if (isFPChecked) {
+        final Set<int> fpNumbers = _generateFP(n);
+
+        for (final fp in fpNumbers) {
+          final int lastTwo = fp % 100;
+
+          if (high) {
+            // FP + HIGH → all 10 ranges
+            for (int r = 0; r < 10; r++) {
+              final int candidate = s * 1000 + r * 100 + lastTwo;
+
+              if (!_allow(candidate)) continue;
+              rawTargets.add(candidate);
+            }
+          } else {
+            // FP + LOW → selected ranges only
+            for (final r in selectedRange_Set) {
+              final int candidate = s * 1000 + r * 100 + lastTwo;
+
+              if (!_allow(candidate)) continue;
+              rawTargets.add(candidate);
+            }
+          }
+        }
+      }
+      // =======================
+      // NORMAL HIGH / LOW
+      // =======================
+      else {
+        final int lastTwoDigits = n % 100;
+
+        if (high) {
+          // HIGH → all 10 ranges
+          for (int r = 0; r < 10; r++) {
+            final int candidate = s * 1000 + r * 100 + lastTwoDigits;
+
+            if (!_allow(candidate)) continue;
+            rawTargets.add(candidate);
+          }
+        } else {
+          // LOW → original logic
+          for (final r in selectedRange_Set) {
+            final int baseStart = s * 1000 + r * 100;
+
+            for (int i = 0; i < 100; i++) {
+              final int candidate = baseStart + i;
+
+              if (!odd && !even) {
+                if (candidate % 100 != lastTwoDigits) continue;
+              }
+
+              if (even && !odd && candidate.isOdd) continue;
+              if (odd && !even && candidate.isEven) continue;
+
+              if (!_allow(candidate)) continue;
+
+              rawTargets.add(candidate);
+            }
+          }
+        }
+      }
+    }
+
+    if (rawTargets.isEmpty) return;
+
+    double totalRequired = 0.0;
+    double totalRefund = 0.0;
+
+    // ==========================================================
+    // STEP 2: CALCULATE WALLET DIFFERENCE
+    // ==========================================================
+
+    for (final target in rawTargets) {
+      final int oldQty = cellQty[target] ?? 0;
+      final int diffQty = newQty - oldQty;
+
+      int multiplier = 1;
+
+      if (high) {
+        final int rangeIndex = (target % 1000) ~/ 100;
+        multiplier = multipliers[rangeIndex];
+      }
+
+      final double costPerCell = selectedPoint * multiplier;
+
+      if (diffQty > 0) {
+        totalRequired += diffQty * costPerCell;
+      } else if (diffQty < 0) {
+        totalRefund += diffQty.abs() * costPerCell;
+      }
+    }
+
+    // ==========================================================
+    // STEP 3: WALLET CHECK
+    // ==========================================================
+
+    if (totalRequired > 0 && !wallet.hasEnough(totalRequired)) {
+      showLowBalanceSnackBar(context);
+      return;
+    }
+
+    // ==========================================================
+    // STEP 4: APPLY WALLET
+    // ==========================================================
+
+    if (totalRequired > 0) wallet.deduct(totalRequired);
+    if (totalRefund > 0) wallet.add(totalRefund);
+
+    // ==========================================================
+    // STEP 5: APPLY VALUES TO UI
+    // ==========================================================
+
+    for (final target in rawTargets) {
+      cellQty[target] = newQty;
+
+      final s = target ~/ 1000;
+      final r = (target % 1000) ~/ 100;
+
+      final ctrl = _getCtrl(s, r, target);
+
+      final String newText = newQty == 0 ? "" : newQty.toString();
+
+      if (ctrl.text != newText) {
+        ctrl.value = TextEditingValue(
+          text: newText,
+          selection: TextSelection.collapsed(offset: newText.length),
+        );
+      }
+    }
+
+    recalc();
+
+    debugPrint("Total Deducted : $totalRequired");
+    debugPrint("Wallet After  : ${wallet.walletBalance.value}");
+    debugPrint("========== onCellChanged END ==========\n");
+  }
+
+  void pageRange(bool up) {
+    if (up) {
+      if (selectedRange < ranges.length - 1) selectedRange++;
+    } else {
+      if (selectedRange > 0) selectedRange--;
+    }
+    selectedRange_Set
+      ..clear()
+      ..add(selectedRange);
+    _updateVisible();
+  }
+
+  void toggleSeriesSelection(int s) {
+    selectedSeries_Set.contains(s)
+        ? (selectedSeries_Set.length > 1 ? selectedSeries_Set.remove(s) : null)
+        : selectedSeries_Set.add(s);
+    selectedSeries = selectedSeries_Set.last;
+    seriesStart = selectedSeries * 1000;
+    _updateVisible();
+  }
+
+  void toggleAllSeries() {
+    if (selectedSeries_Set.length == 10) {
+      selectedSeries_Set
+        ..clear()
+        ..add(selectedSeries);
+    } else {
+      selectedSeries_Set
+        ..clear()
+        ..addAll(List.generate(10, (i) => i));
+      selectedSeries = selectedSeries_Set.last;
+    }
+    _updateVisible();
+  }
+
+  void toggleRangeSelection(int r) {
+    selectedRange_Set.contains(r)
+        ? (selectedRange_Set.length > 1 ? selectedRange_Set.remove(r) : null)
+        : selectedRange_Set.add(r);
+    selectedRange = selectedRange_Set.last;
+    selectedPoint = ranges[selectedRange].points;
+    _updateVisible();
+  }
+
+  void _updateVisible() {
+    visibleStart = seriesStart + (selectedRange * 100);
+    visibleEnd = visibleStart + 99;
+    headerCtrls.clear();
+    rowCtrls.clear();
+    recalc();
+  }
+
+  // --- UTILS ---
+
+  String _key(int s, int r, int n) => 'S${s}_R${r}_N$n';
+
+  TextEditingController _getCtrl(int s, int r, int n) {
+    return ctrls.putIfAbsent(_key(s, r, n), () => TextEditingController());
+  }
+
+  bool _allow(int n) =>
+      (!even && !odd) || (even && n.isEven) || (odd && n.isOdd);
+
+  void toggleEven() {
+    even = !even;
+    if (even) odd = false;
+  }
+
+  void toggleOdd() {
+    odd = !odd;
+    if (odd) even = false;
+  }
+
+  void toggleBlock() => block = !block;
+
+  void highLow(bool high) {
+    for (int n = visibleStart; n <= visibleEnd; n++) {
+      final local = n % 100;
+      if (((high && local >= 50) || (!high && local < 50)) && _allow(n)) {
+        _getCtrl(selectedSeries, selectedRange, n).text = '1';
+      }
+    }
+    recalc();
+  }
+
+  void recalc() {
+    qty = 0;
+    amount = 0;
+    for (int s in selectedSeries_Set) {
+      for (int r in selectedRange_Set) {
+        final start = s * 1000 + r * 100;
+        for (int n = start; n <= start + 99; n++) {
+          final v = int.tryParse(_getCtrl(s, r, n).text) ?? 0;
+          qty += v;
+          amount += v * selectedPoint;
+        }
+      }
+    }
+  }
+
+  // --- DATA RETRIEVAL ---
+
+  int getSeriesQuantity(int series) {
+    int total = 0;
+    for (int range = 0; range < ranges.length; range++) {
+      for (
+        int n = (series * 1000 + range * 100);
+        n <= (series * 1000 + range * 100 + 99);
+        n++
+      ) {
+        total += int.tryParse(_getCtrl(series, range, n).text) ?? 0;
+      }
+    }
+    return total;
+  }
+
+  double getSeriesAmount(int series) =>
+      getSeriesQuantity(series) * selectedPoint;
+
+  Map<int, int> collectAllNumbersForPrint() {
+    final Map<int, int> result = {};
+    for (int s = 0; s < 10; s++) {
+      for (int r = 0; r < ranges.length; r++) {
+        for (
+          int n = (s * 1000 + r * 100);
+          n <= (s * 1000 + r * 100 + 99);
+          n++
+        ) {
+          final v = int.tryParse(_getCtrl(s, r, n).text) ?? 0;
+          if (v > 0) result[n] = v;
+        }
+      }
+    }
+    return result;
+  }
+
+  int getTotalQuantityAllSelected() {
+    int total = 0;
+    for (final s in selectedSeries_Set) {
+      for (int r = 0; r < ranges.length; r++) {
+        for (
+          int n = (s * 1000 + r * 100);
+          n <= (s * 1000 + r * 100 + 99);
+          n++
+        ) {
+          total += int.tryParse(_getCtrl(s, r, n).text) ?? 0;
+        }
+      }
+    }
+    return total;
+  }
+
+  double getTotalAmountAllSelected() =>
+      getTotalQuantityAllSelected() * selectedPoint;
+
+  // --- UI FEEDBACK ---
+
+  void showLowBalanceSnackBar(BuildContext context) {
+    _showSnack(context, 'Low balance! Limit reached.');
+  }
+
+  void showSelectPointSnackBar(BuildContext context) {
+    _showSnack(context, 'Select a Point Value.');
+  }
+
+  void _showSnack(BuildContext context, String msg) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        behavior: SnackBarBehavior.floating,
+        margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        backgroundColor: const Color(0xFF0071CE),
+        content: Row(
+          children: [
+            const Icon(Icons.info_outline, color: Colors.white),
+            const SizedBox(width: 12),
+            Text(
+              msg,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void clear(BuildContext context) {
+    // final wallet = Get.find<WalletController>();
+
+    double refundAmount = 0.0;
+
+    // 1️⃣ Calculate refund before clearing
+    cellQty.forEach((number, q) {
+      if (q > 0) {
+        refundAmount += q * selectedPoint;
+      }
+    });
+
+    // 2️⃣ Refund wallet (if needed)
+    // if (refundAmount > 0) {
+    //   wallet.add(refundAmount);
+    // }
+
+    // 3️⃣ Clear all controllers
+    for (final c in ctrls.values) {
+      c.clear();
+    }
+
+    // 4️⃣ Clear stored quantities (VERY IMPORTANT)
+    cellQty.clear();
+
+    // 5️⃣ Reset selections
+    selectedSeries_Set = {0};
+    selectedRange_Set = {0};
+    odd = false;
+    even = false;
+
+    // 6️⃣ Reset totals
+    qty = 0;
+    amount = 0;
+
+    // 7️⃣ Recalculate UI totals
+    recalc();
+
+    // debugPrint(
+    //   '✅ All cleared. Refunded=$refundAmount | Wallet=${wallet.walletBalance.value}',
+    // );
+  }
+
+  void dispose() {
+    for (final c in ctrls.values) c.dispose();
+  }
+
+  void clearAllControllers() {
+    for (final controller in ctrls.values) {
+      controller.clear();
+    }
+  }
+}
+
+class BettingGridController {
+  final BettingGridModel model = BettingGridModel();
+
+  // =====================================================
+  // TOKEN
+  // =====================================================
+  Future<String> _getToken() async {
+    final box = await Hive.openBox('app');
+    return box.get('token', defaultValue: '') as String;
+  }
+
+  // =====================================================
+  // BUILD API PAYLOAD (DO NOT CHANGE FORMAT)
+  // =====================================================
+
+  // Map<String, dynamic> buildPlaceBidPayload({
+  //   String? slot, // for normal bet
+  //   List<TimeOfDay>? advancedSlots, // for advanced bet
+  // }) {
+  //   final Map<String, int> allDatas2 = {};
+  //   final Map<String, int> allDatas123 = {};
+  //
+  //   final int point = model.selectedPoint.toInt();
+  //
+  //   // ================= VALIDATION =================
+  //   final bool isAdvanced = advancedSlots != null && advancedSlots.isNotEmpty;
+  //
+  //   if (!isAdvanced && (slot == null || slot.isEmpty)) {
+  //     throw Exception("Slot is required for normal bet");
+  //   }
+  //
+  //   // ================= FORMAT TIME =================
+  //   String formatTime(TimeOfDay time) {
+  //     final h = time.hour.toString().padLeft(2, '0');
+  //     final m = time.minute.toString().padLeft(2, '0');
+  //     return '$h:$m';
+  //   }
+  //
+  //   // ================= BUILD SLOT FIELD =================
+  //   String sloatValue;
+  //
+  //   if (isAdvanced) {
+  //     final Map<String, String> slotMap = {
+  //       for (int i = 0; i < advancedSlots.length; i++)
+  //         i.toString(): formatTime(advancedSlots[i]),
+  //     };
+  //     sloatValue = jsonEncode(slotMap);
+  //   } else {
+  //     sloatValue = slot!;
+  //   }
+  //
+  //   // ================= POINT MAP =================
+  //   if (point > 0) {
+  //     for (int series = 0; series < 10; series++) {
+  //       for (int range = 0; range < model.ranges.length; range++) {
+  //         allDatas123['c${series}_s${range}_point'] = point;
+  //       }
+  //     }
+  //   }
+  //
+  //   // ================= BET DATA =================
+  //   for (int series = 0; series < 10; series++) {
+  //     for (int range = 0; range < model.ranges.length; range++) {
+  //       final int base = series * 1000 + range * 100;
+  //
+  //       for (int row = 0; row < 10; row++) {
+  //         for (int col = 0; col < 10; col++) {
+  //           final int number = row * 10 + col;
+  //
+  //           final int qty =
+  //               int.tryParse(
+  //                 model._getCtrl(series, range, base + number).text,
+  //               ) ??
+  //               0;
+  //
+  //           if (qty > 0) {
+  //             allDatas2['c${series}_s${range}_$number'] = qty * point;
+  //           }
+  //         }
+  //       }
+  //     }
+  //   }
+  //
+  //   // ================= FINAL PAYLOAD =================
+  //   return {
+  //     'sloat': sloatValue,
+  //     'a1': point.toString(),
+  //     'advance_bet': isAdvanced ? "1" : "0",
+  //     'all_datas2': jsonEncode(allDatas2),
+  //     'all_datas123': jsonEncode(allDatas123),
+  //   };
+  // }
+
+  Map<String, dynamic> buildPlaceBidPayload({
+    String? slot,
+    List<TimeOfDay>? advancedSlots,
+  }) {
+    final Map<String, int> allDatas2 = {};
+    final Map<String, int> allDatas123 = {};
+
+    final int point = model.selectedPoint.toInt();
+    final bool isAdvanced = advancedSlots != null && advancedSlots.isNotEmpty;
+
+    if (!isAdvanced && (slot == null || slot.isEmpty)) {
+      throw Exception("Slot is required for normal bet");
+    }
+
+    // ================= FORMAT TIME =================
+    String formatTime(TimeOfDay time) {
+      final h = time.hour.toString().padLeft(2, '0');
+      final m = time.minute.toString().padLeft(2, '0');
+      return '$h:$m';
+    }
+
+    // ================= BUILD SLOT =================
+    String sloatValue;
+
+    if (isAdvanced) {
+      final Map<String, String> slotMap = {
+        for (int i = 0; i < advancedSlots.length; i++)
+          i.toString(): formatTime(advancedSlots[i]),
+      };
+      sloatValue = jsonEncode(slotMap);
+    } else {
+      sloatValue = slot!;
+    }
+
+    // ================= MULTIPLIERS =================
+    final List<int> multipliers = [1, 1, 2, 3, 5, 5, 10, 20, 25, 25];
+
+    // ================= POINT MAP =================
+    if (point > 0) {
+      for (int series = 0; series < 10; series++) {
+        for (int range = 0; range < model.ranges.length; range++) {
+          allDatas123['c${series}_s${range}_point'] = point;
+        }
+      }
+    }
+
+    // ================= BET DATA =================
+    for (int series = 0; series < 10; series++) {
+      for (int range = 0; range < model.ranges.length; range++) {
+        final int base = series * 1000 + range * 100;
+
+        for (int row = 0; row < 10; row++) {
+          for (int col = 0; col < 10; col++) {
+            final int number = row * 10 + col;
+
+            final int qty =
+                int.tryParse(
+                  model._getCtrl(series, range, base + number).text,
+                ) ??
+                0;
+
+            if (qty <= 0) continue;
+
+            int multiplier = 1;
+
+            // ✅ HIGH mode multiplier
+            if (model.high) {
+              multiplier = multipliers[range];
+            }
+
+            final int totalAmount = qty * point * multiplier;
+
+            allDatas2['c${series}_s${range}_$number'] = totalAmount;
+          }
+        }
+      }
+    }
+
+    // ================= FINAL PAYLOAD =================
+    return {
+      'sloat': sloatValue,
+      'a1': point.toString(),
+      'advance_bet': isAdvanced ? "1" : "0",
+      'all_datas2': jsonEncode(allDatas2),
+      'all_datas123': jsonEncode(allDatas123),
+    };
+  }
+
+  Future<void> handlePrint(
+    BuildContext context,
+    String slot,
+    List<TimeOfDay> slots,
+    String userId,
+  ) async {
+    final now = DateTime.now();
+
+    // ✅ SLOT MULTIPLIER
+    final int slotMultiplier = slots.isNotEmpty ? slots.length : 1;
+
+    try {
+      // ================= BUILD PAYLOAD =================
+      final payload = buildPlaceBidPayload(
+        slot: slots.isEmpty ? slot : null,
+        advancedSlots: slots.isNotEmpty ? slots : null,
+      );
+
+      final token = await _getToken();
+
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('${ApiConstants.baseUrl}/place-bid'),
+      );
+
+      request.headers['Authorization'] = 'Bearer $token';
+
+      payload.forEach((key, value) {
+        request.fields[key] = value.toString();
+      });
+
+      final streamedResponse = await request.send();
+      final response = await http.Response.fromStream(streamedResponse);
+
+      if (response.statusCode != 200) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text("Server error")));
+        return;
+      }
+
+      final apiJson = jsonDecode(response.body);
+
+      if (apiJson['status'] != true) {
+        final message = apiJson['message'] ?? 'Something went wrong';
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message), backgroundColor: Colors.redAccent),
+        );
+        return;
+      }
+
+      final data = apiJson['data'];
+
+      List<String> ticketIds = [];
+      List<String> ticketTimes = [];
+
+      // ================= TICKET IDS =================
+      if (data['parent_all'] is List &&
+          (data['parent_all'] as List).isNotEmpty) {
+        ticketIds = (data['parent_all'] as List)
+            .map((e) => e.toString())
+            .toList();
+      }
+
+      // ================= TICKET TIMES =================
+      final walate2 = data['walate2'];
+
+      if (walate2 != null) {
+        try {
+          if (walate2.toString().startsWith('{')) {
+            final decodedWalate = jsonDecode(walate2);
+            ticketTimes = decodedWalate.values
+                .map<String>((e) => e.toString())
+                .toList();
+          } else {
+            ticketTimes = [walate2.toString()];
+          }
+        } catch (_) {
+          ticketTimes = [walate2.toString()];
+        }
+      }
+
+      if (ticketTimes.isEmpty) {
+        final fallbackTime =
+            '${now.hour.toString().padLeft(2, '0')}:'
+            '${now.minute.toString().padLeft(2, '0')}';
+
+        ticketTimes = List.filled(
+          ticketIds.isNotEmpty ? ticketIds.length : 1,
+          fallbackTime,
+        );
+      }
+
+      // ==========================================================
+      // CONVERT payload["all_datas2"] → selections
+      // ==========================================================
+
+      final Map<String, dynamic> decoded = Map<String, dynamic>.from(
+        jsonDecode(payload["all_datas2"]),
+      );
+
+      final Map<String, int> selections = {};
+
+      int totalQty = 0;
+      int totalAmount = 0;
+
+      final int point = model.selectedPoint.toInt();
+
+      decoded.forEach((key, value) {
+        final parts = key.split('_');
+
+        final int series = int.parse(parts[0].substring(1));
+        final int range = int.parse(parts[1].substring(1));
+        final int number = int.parse(parts[2]);
+
+        final String fullNumber = (series * 1000 + range * 100 + number)
+            .toString()
+            .padLeft(4, "0");
+
+        final int amount = int.parse(value.toString());
+
+        int qty;
+
+        if (model.high) {
+          qty = amount ~/ 2;
+        } else {
+          qty = amount ~/ point;
+        }
+
+        if (qty > 0) {
+          // ✅ APPLY SLOT MULTIPLIER HERE
+          final int finalQty = qty * slotMultiplier;
+          final int finalAmount = amount * slotMultiplier;
+
+          selections[fullNumber] = finalQty;
+
+          totalQty += finalQty;
+          totalAmount += finalAmount;
+        }
+      });
+
+      if (selections.isEmpty) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('No numbers selected')));
+        return;
+      }
+
+      debugPrint("════════════ PRINT DEBUG ════════════");
+      debugPrint("Selections → $selections");
+      debugPrint("Total Qty → $totalQty");
+      debugPrint("Total Amount → $totalAmount");
+      debugPrint("Ticket IDs → $ticketIds");
+      debugPrint("Slot Multiplier → $slotMultiplier");
+      debugPrint("══════════════════════════════════════");
+
+      // ================= SPLIT AMOUNT PER TICKET =================
+      List<int> ticketAmounts = [];
+
+      if (ticketIds.isNotEmpty) {
+        final int perTicket = totalAmount ~/ ticketIds.length;
+
+        ticketAmounts = List.generate(ticketIds.length, (_) => perTicket);
+      } else {
+        ticketAmounts = [totalAmount];
+      }
+
+      // ================= PRINT =================
+      await TicketPrintService.printTicket(
+        context: context,
+        selections: selections,
+        ticketIds: ticketIds,
+        ticketTimes: ticketTimes,
+        date:
+            '${now.day.toString().padLeft(2, '0')}-'
+            '${now.month.toString().padLeft(2, '0')}-'
+            '${now.year}',
+        totalQty: totalQty,
+        ticketsAmounts: ticketAmounts,
+        userId: userId,
+      );
+
+      // ================= CLEAR ALL FIELDS =================
+      model.clearAllControllers();
+
+      totalQty = 0;
+      totalAmount = 0;
+    } catch (e) {
+      debugPrint("HandlePrint Error: $e");
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Something went wrong"),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  // =====================================================
+  // PDF SUPPORT METHODS
+  // =====================================================
+  List<pw.Widget> _buildTicketRows(Map<int, int> selections) {
+    return selections.entries.map((e) {
+      return pw.Padding(
+        padding: const pw.EdgeInsets.symmetric(vertical: 2),
+        child: pw.Row(
+          children: [
+            pw.Expanded(
+              child: pw.Text(
+                e.key.toString().padLeft(4, '0'),
+                style: pw.TextStyle(fontSize: 9),
+              ),
+            ),
+            pw.Expanded(
+              child: pw.Text(
+                e.value.toString(),
+                textAlign: pw.TextAlign.right,
+                style: pw.TextStyle(
+                  fontSize: 9,
+                  fontWeight: pw.FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }).toList();
+  }
+
+  pw.Widget _metaRow(String label, String value) {
+    return pw.Padding(
+      padding: const pw.EdgeInsets.symmetric(vertical: 2),
+      child: pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [
+          pw.Text(label, style: pw.TextStyle(fontSize: 8)),
+          pw.Text(value, style: pw.TextStyle(fontSize: 8)),
+        ],
+      ),
+    );
+  }
+
+  // =====================================================
+  // CLEANUP
+  // =====================================================
+  void dispose() => model.dispose();
+}
+
+class BettingGridScreen extends StatefulWidget {
+  final int limitUpdate;
+  final String slot;
+  final String id;
+
+  const BettingGridScreen({
+    super.key,
+    required this.limitUpdate,
+    required this.slot,
+    required this.id,
+  });
+
+  @override
+  State<BettingGridScreen> createState() => _BettingGridScreenState();
+}
+
+class _BettingGridScreenState extends State<BettingGridScreen> {
+  late BettingGridController controller;
+  final homeController = HomeController();
+
+  int? _selectedIndex; // null: none, 0: Page Up, 1: Page Down, 2: All
+  bool isFPChecked = false;
+  List<TimeOfDay> slots = [];
+  final ScrollController _verticalController = ScrollController();
+  final ScrollController _horizontalController = ScrollController();
+  bool _isClearing = false;
+
+  final Map<int, FocusNode> _headerFocusNodes = {};
+  final Map<int, bool> _headerHoverState = {};
+  final Map<int, FocusNode> _rowFocusNodes = {};
+  final Map<int, bool> _rowHoverState = {};
+
+  final Map<int, FocusNode> _cellFocusNodes = {};
+
+  FocusNode _getFocusNode(int n) {
+    return _cellFocusNodes.putIfAbsent(n, () => FocusNode());
+  }
+
+  int get _totalNumbers =>
+      controller.model.visibleEnd - controller.model.visibleStart + 1;
+
+  int get _colCount => 10;
+
+  int get _rowCount => (_totalNumbers / _colCount).ceil();
+
+  @override
+  void dispose() {
+    _horizontalController.dispose();
+    _verticalController.dispose();
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    controller = BettingGridController();
+
+    print("Limit Update : ${widget.limitUpdate}");
+    controller.model.limitValue = widget.limitUpdate;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.grey.shade200,
+      body: SafeArea(
+        child: Column(
+          children: [
+            const SizedBox(height: 3),
+
+            _seriesBar(),
+
+            const SizedBox(height: 3),
+
+            _topControls(),
+
+            const SizedBox(height: 3),
+
+            // ================= GRID AREA =================
+            Expanded(
+              child: Scrollbar(
+                controller: _verticalController, // attach vertical controller
+                thumbVisibility: true,
+                child: SingleChildScrollView(
+                  controller: _verticalController,
+                  // same controller as Scrollbar
+                  scrollDirection: Axis.vertical,
+                  child: Scrollbar(
+                    controller: _horizontalController, // horizontal scrollbar
+                    thumbVisibility: true,
+                    child: SingleChildScrollView(
+                      controller: _horizontalController,
+                      // same controller as horizontal scrollbar
+                      scrollDirection: Axis.horizontal,
+                      child: SizedBox(
+                        width: MediaQuery.of(
+                          context,
+                        ).size.width, // adjust width if needed
+                        child: _grid(),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 2),
+
+            _bottomSummary(),
+
+            const SizedBox(height: 2),
+
+            _bottomButtons(widget.id),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ===================== SERIES BAR =====================
+  Widget _seriesBar() {
+    return SizedBox(
+      height: 20,
+      width: double.infinity,
+      child: Row(
+        children: [
+          // ===== SERIES LABEL (GREEN) =====
+          Container(
+            width: 90,
+            height: double.infinity,
+            alignment: Alignment.center,
+            color: const Color(0xFF6FBF2E),
+            // green like image
+            child: const Text(
+              'Series',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: Colors.black,
+              ),
+            ),
+          ),
+
+          // ===== SERIES ROW (ORANGE) =====
+          Expanded(
+            child: Container(
+              color: const Color(0xFFE98A1D), // orange bar
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  // ===== ALL =====
+                  _seriesItem(
+                    label: 'All',
+                    checked: controller.model.selectedSeries_Set.length == 10,
+                    onTap: () {
+                      setState(() {
+                        controller.model.toggleAllSeries();
+                      });
+                    },
+                  ),
+
+                  // ===== 0000–9999 =====
+                  ...List.generate(10, (i) {
+                    final selected = controller.model.selectedSeries_Set
+                        .contains(i);
+
+                    return _seriesItem(
+                      label:
+                          '${(i * 1000).toString().padLeft(4, '0')}-'
+                          '${(i * 1000 + 999).toString().padLeft(4, '0')}',
+                      checked: selected,
+                      onTap: () {
+                        setState(() {
+                          controller.model.toggleSeriesSelection(i);
+                          controller.model.focusSeries(i);
+                        });
+                      },
+                    );
+                  }),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _seriesItem({
+    required String label,
+    required bool checked,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        child: Row(
+          children: [
+            Container(
+              width: 14,
+              height: 14,
+              margin: const EdgeInsets.only(right: 6),
+              decoration: BoxDecoration(
+                color: checked ? Colors.blue : Colors.white,
+                border: Border.all(color: Colors.black, width: 1),
+              ),
+              child: checked
+                  ? const Icon(Icons.check, size: 12, color: Colors.white)
+                  : null,
+            ),
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: Colors.black,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ===================== TOP CONTROLS =====================
+  Widget _topControls() {
+    const hGap = SizedBox(width: 6);
+    const vGap = SizedBox(height: 6);
+
+    void _printRangeDebug() {
+      debugPrint("------ RANGE DEBUG ------");
+      debugPrint("High => ${controller.model.high}");
+      debugPrint("Low  => ${controller.model.low}");
+      debugPrint("-------------------------");
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            // ================= HIGH / LOW =================
+            SizedBox(
+              width: 240,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: _btn(
+                      'High',
+                      controller.model.high
+                          ? Colors.blue
+                          : Colors.blue.withOpacity(0.3),
+                      () {
+                        setState(() {
+                          controller.model.high = true;
+                          controller.model.low = false;
+                        });
+                        controller.model.ctrls.clear();
+                        _printRangeDebug();
+                      },
+                    ),
+                  ),
+                  hGap,
+                  Expanded(
+                    child: _btn(
+                      'Low',
+                      controller.model.low
+                          ? Colors.lightBlue
+                          : Colors.lightBlue.withOpacity(0.3),
+                      () {
+                        setState(() {
+                          controller.model.low = true;
+                          controller.model.high = false;
+                        });
+                        controller.model.ctrls.clear();
+                        _printRangeDebug();
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            const Spacer(),
+
+            // ================= EVEN / ODD =================
+            _check('Even', controller.model.even, () {
+              setState(controller.model.toggleEven);
+            }),
+            hGap,
+            _check('Odd', controller.model.odd, () {
+              setState(controller.model.toggleOdd);
+            }),
+
+            const Spacer(),
+
+            // ================= FP + RESULT =================
+            SizedBox(
+              width: 220,
+              child: Row(
+                children: [
+                  Expanded(
+                    child: InkWell(
+                      onTap: () {
+                        setState(() {
+                          isFPChecked = !isFPChecked;
+                        });
+                        debugPrint("FP Checked => $isFPChecked");
+                      },
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            width: 16,
+                            height: 16,
+                            decoration: BoxDecoration(
+                              border: Border.all(color: Colors.black, width: 1),
+                              color: isFPChecked ? Colors.black : Colors.white,
+                            ),
+                            child: isFPChecked
+                                ? const Icon(
+                                    Icons.check,
+                                    size: 12,
+                                    color: Colors.white,
+                                  )
+                                : null,
+                          ),
+                          const SizedBox(width: 6),
+                          const Text(
+                            'FP',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+
+                  _btn('Show Result', Colors.yellow.shade300, () {
+                    showDialog(
+                      context: context,
+                      barrierDismissible: true,
+                      barrierColor: Colors.black.withOpacity(0.45),
+                      builder: (_) => const ResultDialog(),
+                    );
+                  }),
+                ],
+              ),
+            ),
+          ],
+        ),
+        vGap,
+      ],
+    );
+  }
+
+  Widget _btn(String text, Color bg, VoidCallback onTap) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          height: 20,
+          alignment: Alignment.center,
+          color: bg,
+          child: Text(
+            text,
+            textAlign: TextAlign.center,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _check(String text, bool checked, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Row(
+        children: [
+          Container(
+            width: 14,
+            height: 14,
+            margin: const EdgeInsets.only(right: 4),
+            decoration: BoxDecoration(
+              color: checked ? Colors.blue : Colors.white,
+              border: Border.all(color: Colors.black),
+            ),
+            child: checked
+                ? const Icon(Icons.check, size: 12, color: Colors.white)
+                : null,
+          ),
+          Text(text),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildButton(
+    int index,
+    String label,
+    int flex, {
+    bool showCheckbox = false,
+  }) {
+    final bool isSelected = _selectedIndex == index;
+
+    return Expanded(
+      flex: flex,
+      child: InkWell(
+        onTap: () {
+          setState(() {
+            _selectedIndex = index;
+          });
+
+          // ================= ACTION =================
+          switch (index) {
+            case 0: // Page Up
+              controller.model.pageRange(false);
+              break;
+
+            case 1: // Page Down
+              controller.model.pageRange(true);
+              break;
+
+            case 2: // All ranges
+              final model = controller.model;
+              if (model.selectedRange_Set.length == model.ranges.length) {
+                // deselect all, keep current
+                model.selectedRange_Set
+                  ..clear()
+                  ..add(model.selectedRange);
+              } else {
+                // select all
+                model.selectedRange_Set
+                  ..clear()
+                  ..addAll(List.generate(model.ranges.length, (i) => i));
+              }
+              model.recalc();
+              break;
+          }
+        },
+        child: Container(
+          height: BettingGridModel.headerH,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: isSelected ? Colors.black12 : Colors.white,
+            border: Border.all(color: Colors.black.withOpacity(.4), width: .6),
+          ),
+          child: showCheckbox
+              ? Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Checkbox(
+                      value:
+                          controller.model.selectedRange_Set.length ==
+                          controller.model.ranges.length,
+                      onChanged: null, // indicator only
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    Text(
+                      label,
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                )
+              : Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+        ),
+      ),
+    );
+  }
+
+  // ===================== GRID =====================
+  Widget _grid() {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _leftPanel(),
+        const SizedBox(width: 2),
+        _numberGrid(),
+        const SizedBox(width: 2),
+        _rightTotals(),
+      ],
+    );
+  }
+
+  // ===================== LEFT PANEL =====================
+  Widget _leftPanel() {
+    return SizedBox(
+      width: 240,
+      child: Column(
+        children: [
+          // ================= HEADER =================
+          SizedBox(
+            height: BettingGridModel.headerH,
+            child: Row(
+              children: [
+                _buildButton(0, 'Page Up', 2),
+                _buildButton(1, 'Page Down', 2),
+                _buildButton(2, 'All', 2, showCheckbox: true),
+              ],
+            ),
+          ),
+
+          // ================= LIST =================
+          Column(
+            children: List.generate(controller.model.ranges.length, (i) {
+              final r = controller.model.ranges[i];
+
+              final bool rangeActive = controller.model.selectedRange_Set
+                  .contains(i);
+
+              final start = controller.model.seriesStart + i * 100;
+              final end = start + 99;
+
+              final int colorIndex =
+                  int.parse(start.toString().padLeft(4, '0')[0]) %
+                  controller.model.colors.length;
+
+              final Color rangeColor = controller.model.colors[colorIndex];
+
+              // -------- HIGH STATIC DATA ----------
+              final List<int> multipliers = [1, 1, 2, 3, 5, 5, 10, 20, 25, 25];
+
+              final List<int> amounts = [
+                180,
+                180,
+                360,
+                540,
+                900,
+                900,
+                1800,
+                3600,
+                4500,
+                4500,
+              ];
+
+              return InkWell(
+                onTap: () {
+                  setState(() {
+                    if (rangeActive) {
+                      controller.model.selectedRange_Set.remove(i);
+                    } else {
+                      controller.model.selectedRange_Set.add(i);
+                    }
+
+                    controller.model.selectedRange = i;
+
+                    controller.model.visibleStart =
+                        controller.model.seriesStart + i * 100;
+
+                    controller.model.visibleEnd =
+                        controller.model.visibleStart + 99;
+
+                    controller.model.headerCtrls.clear();
+                    controller.model.rowCtrls.clear();
+
+                    controller.model.recalc();
+                  });
+                },
+                child: Container(
+                  height: BettingGridModel.cellH + 4,
+                  decoration: BoxDecoration(
+                    border: Border(
+                      bottom: BorderSide(
+                        color: Colors.black.withOpacity(.2),
+                        width: .3,
+                      ),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      // ================= RANGE =================
+                      Expanded(
+                        flex: 2,
+                        child: Container(
+                          color: rangeActive ? rangeColor : Colors.transparent,
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            '${start.toString().padLeft(4, '0')}-${end.toString().padLeft(4, '0')}',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+
+                      // ================= HIGH MODE UI =================
+                      if (controller.model.high) ...[
+                        // MIDDLE (Pts × X)
+                        Expanded(
+                          flex: 2,
+                          child: Container(
+                            color: r.color,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Transform.scale(
+                                  scale: 0.6,
+                                  child: Checkbox(
+                                    value: rangeActive,
+                                    onChanged: (_) {
+                                      setState(() {
+                                        if (rangeActive) {
+                                          controller.model.selectedRange_Set
+                                              .remove(i);
+                                        } else {
+                                          controller.model.selectedRange_Set
+                                              .add(i);
+                                        }
+                                        controller.model.recalc();
+                                      });
+                                    },
+                                    materialTapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                    visualDensity: VisualDensity.compact,
+                                  ),
+                                ),
+
+                                Text(
+                                  '(Pts 2 × ${multipliers[i]})',
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+
+                        // RIGHT (Amount)
+                        Expanded(
+                          flex: 1,
+                          child: Container(
+                            color: r.color,
+                            alignment: Alignment.center,
+                            child: Text(
+                              amounts[i].toString(),
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ]
+                      // ================= LOW MODE (YOUR ORIGINAL) =================
+                      else ...[
+                        // ================= LEFT (Checkbox Column) =================
+                        Expanded(
+                          flex: 2,
+                          child: Container(
+                            color: r.color,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Transform.scale(
+                                  scale: 0.6,
+                                  child: Checkbox(
+                                    value: rangeActive,
+                                    onChanged: (_) {
+                                      setState(() {
+                                        if (rangeActive) {
+                                          controller.model.selectedRange_Set
+                                              .remove(i);
+                                        } else {
+                                          controller.model.selectedRange_Set
+                                              .add(i);
+                                        }
+                                        controller.model.recalc();
+                                      });
+                                    },
+                                    materialTapTargetSize:
+                                        MaterialTapTargetSize.shrinkWrap,
+                                    visualDensity: VisualDensity.compact,
+                                  ),
+                                ),
+
+                                Text(
+                                  '(pt ${controller.model.selectedPoint.toInt()})',
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+
+                        // ================= RIGHT (PT Column with Radio) =================
+                        Expanded(
+                          flex: 2,
+                          child: Container(
+                            color: r.color,
+                            alignment: Alignment.center,
+                            child: r.points == 0
+                                ? const SizedBox.shrink() // ✅ hide radio if this row has 0
+                                : Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      // ✅ RADIO BUTTON
+                                      Transform.scale(
+                                        scale: 0.7,
+                                        child: Radio<int>(
+                                          value: i,
+                                          groupValue:
+                                              controller.model.selectedRange,
+                                          onChanged: (value) {
+                                            setState(() {
+                                              controller.model.selectedPoint = r
+                                                  .points
+                                                  .toDouble(); // set this row point
+                                              controller.model.selectedRange =
+                                                  value!;
+                                              controller.model.recalc();
+                                            });
+                                          },
+                                          materialTapTargetSize:
+                                              MaterialTapTargetSize.shrinkWrap,
+                                          visualDensity: VisualDensity.compact,
+                                        ),
+                                      ),
+
+                                      const SizedBox(width: 4),
+
+                                      // ✅ Show Points
+                                      Text(
+                                        r.points.toStringAsFixed(2),
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              );
+            }),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ===================== NUMBER GRID =====================
+  Widget _
+
+  numberGrid() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            _cornerHeader(),
+            ...List.generate(_colCount, _editableHeader),
+          ],
+        ),
+        ...List.generate(_rowCount, _row),
+      ],
+    );
+  }
+
+  Widget _row(int row) {
+    return Row(
+      children: [
+        _editableRowHeader(row),
+
+        ...List.generate(_colCount, (col) {
+          final index = row * _colCount + col;
+
+          if (index >= _totalNumbers) {
+            return SizedBox(width: BettingGridModel.cellW);
+          }
+
+          final n = controller.model.visibleStart + index;
+
+          return _cell(n);
+        }),
+      ],
+    );
+  }
+
+  Widget _cell(int n) {
+    final ctrl = controller.model._getCtrl(
+      controller.model.selectedSeries,
+      controller.model.selectedRange,
+      n,
+    );
+
+    final focusNode = _getFocusNode(n);
+
+    // 🔥 Handle BOTH KeyDown + KeyRepeat (for long press)
+    focusNode.onKeyEvent = (node, event) {
+      if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+        return KeyEventResult.ignored;
+      }
+
+      final int start = controller.model.visibleStart;
+      final int currentIndex = n - start;
+
+      int newIndex = currentIndex;
+
+      debugPrint("----- NAV START -----");
+      debugPrint("Current Number: $n");
+      debugPrint("Current Index: $currentIndex");
+
+      switch (event.logicalKey) {
+        case LogicalKeyboardKey.arrowRight:
+          newIndex++;
+          debugPrint("Pressed →");
+          break;
+
+        case LogicalKeyboardKey.arrowLeft:
+          newIndex--;
+          debugPrint("Pressed ←");
+          break;
+
+        case LogicalKeyboardKey.arrowDown:
+          newIndex += _colCount;
+          debugPrint("Pressed ↓");
+          break;
+
+        case LogicalKeyboardKey.arrowUp:
+          newIndex -= _colCount;
+          debugPrint("Pressed ↑");
+          break;
+
+        case LogicalKeyboardKey.enter:
+          newIndex += _colCount;
+          debugPrint("Pressed ENTER");
+          break;
+
+        default:
+          return KeyEventResult.ignored;
+      }
+
+      // 🔥 STRICT EDGE PROTECTION (NO WRAP)
+      if (newIndex < 0) {
+        debugPrint("At FIRST cell — cannot move back");
+        debugPrint("----- NAV END -----\n");
+        return KeyEventResult.handled;
+      }
+
+      if (newIndex >= _totalNumbers) {
+        debugPrint("At LAST cell — cannot move forward");
+        debugPrint("----- NAV END -----\n");
+        return KeyEventResult.handled;
+      }
+
+      final int newNumber = start + newIndex;
+
+      debugPrint("Moving To: $newNumber");
+      debugPrint("----- NAV END -----\n");
+
+      _cellFocusNodes[newNumber]?.requestFocus();
+
+      return KeyEventResult.handled;
+    };
+
+    // 🔥 Clean focus listener (no stacking)
+    focusNode.removeListener(_rebuildOnFocus);
+    focusNode.addListener(_rebuildOnFocus);
+
+    final bool hasValue = ctrl.text.trim().isNotEmpty;
+    final bool isFocused = focusNode.hasFocus;
+
+    final Color cellColor = isFPChecked && hasValue
+        ? Colors.yellow.shade300
+        : isFocused
+        ? Colors.green.shade200
+        : Colors.white;
+
+    return SizedBox(
+      width: BettingGridModel.cellW,
+      height: BettingGridModel.cellH,
+      child: Column(
+        children: [
+          SizedBox(
+            height: 18,
+            child: Center(
+              child: Text(
+                n.toString().padLeft(4, '0'),
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.only(left: 4),
+              child: TextField(
+                focusNode: focusNode,
+                controller: ctrl,
+                enabled: !controller.model.block,
+                textAlign: TextAlign.center,
+                keyboardType: TextInputType.number,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+                decoration: InputDecoration(
+                  filled: true,
+                  fillColor: cellColor,
+                  isDense: true,
+                  contentPadding: EdgeInsets.zero,
+                  border: const OutlineInputBorder(
+                    borderRadius: BorderRadius.zero,
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.zero,
+                    borderSide: BorderSide(
+                      color: isFPChecked && hasValue
+                          ? Colors.orange.shade600
+                          : Colors.green.shade400,
+                      width: 0.6,
+                    ),
+                  ),
+                ),
+                onChanged: (value) {
+                  if (ctrl.text != value) return;
+
+                  setState(() {
+                    controller.model.onCellChanged(
+                      n,
+                      value,
+                      context,
+                      isFPChecked,
+                    );
+                  });
+                },
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _rebuildOnFocus() {
+    if (mounted) setState(() {});
+  }
+
+  Widget _cornerHeader() {
+    return SizedBox(
+      width: BettingGridModel.cellW,
+      height: BettingGridModel.headerH,
+      child: const Center(
+        child: Text(
+          'Block',
+          style: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: Color(0xFF717171),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _editableHeader(int col) {
+    controller.model.headerCtrls.putIfAbsent(
+      col,
+      () => TextEditingController(),
+    );
+
+    _headerFocusNodes.putIfAbsent(col, () {
+      final node = FocusNode();
+      node.addListener(() => setState(() {}));
+      return node;
+    });
+
+    _headerHoverState.putIfAbsent(col, () => false);
+
+    final focusNode = _headerFocusNodes[col]!;
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _headerHoverState[col] = true),
+      onExit: (_) => setState(() => _headerHoverState[col] = false),
+      child: SizedBox(
+        width: BettingGridModel.cellW,
+        height: BettingGridModel.headerH - 16,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          color: focusNode.hasFocus
+              ? Colors.green.shade200
+              : _headerHoverState[col]!
+              ? const Color.fromRGBO(52, 73, 95, 1)
+              : const Color.fromRGBO(52, 73, 95, 1),
+          child: TextField(
+            focusNode: focusNode,
+            controller: controller.model.headerCtrls[col],
+            enabled: !controller.model.block,
+            textAlign: TextAlign.center,
+            keyboardType: TextInputType.number,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: focusNode.hasFocus ? Colors.black : Colors.white,
+            ),
+            decoration: InputDecoration(
+              filled: false,
+              isDense: true,
+              contentPadding: EdgeInsets.zero,
+              border: InputBorder.none,
+              enabledBorder: InputBorder.none,
+              focusedBorder: InputBorder.none,
+              disabledBorder: InputBorder.none,
+              suffixIcon: Container(
+                width: 2,
+                color: Colors.white.withOpacity(0.6),
+              ),
+              suffixIconConstraints: const BoxConstraints(
+                minWidth: 1,
+                maxWidth: 1,
+              ),
+            ),
+            onChanged: (v) =>
+                controller.model.applyColumnValue(col, v, context),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // 1366*768 pe resolution match karo
+  Widget _editableRowHeader(int row) {
+    controller.model.rowCtrls.putIfAbsent(row, () => TextEditingController());
+
+    _rowFocusNodes.putIfAbsent(row, () {
+      final node = FocusNode();
+      node.addListener(() => setState(() {}));
+      return node;
+    });
+
+    _rowHoverState.putIfAbsent(row, () => false);
+
+    final focusNode = _rowFocusNodes[row]!;
+
+    return MouseRegion(
+      onEnter: (_) => setState(() => _rowHoverState[row] = true),
+      onExit: (_) => setState(() => _rowHoverState[row] = false),
+      child: Column(
+        children: [
+          SizedBox(height: 10),
+          SizedBox(
+            width: BettingGridModel.cellW,
+            height: BettingGridModel.cellH - 8,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              decoration: BoxDecoration(
+                color: focusNode.hasFocus
+                    ? Colors.green.shade200
+                    : _rowHoverState[row]!
+                    ? const Color.fromRGBO(52, 73, 95, 1)
+                    : const Color.fromRGBO(52, 73, 95, 1),
+                border: Border.all(
+                  color: Colors.black.withOpacity(0.35),
+                  width: 0.4,
+                ),
+              ),
+              child: TextField(
+                focusNode: focusNode,
+                controller: controller.model.rowCtrls[row],
+                enabled: !controller.model.block,
+                textAlign: TextAlign.center,
+                keyboardType: TextInputType.number,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: focusNode.hasFocus ? Colors.black : Colors.white,
+                ),
+                decoration: const InputDecoration(
+                  isDense: true,
+                  contentPadding: EdgeInsets.zero,
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  disabledBorder: InputBorder.none,
+                ),
+                onChanged: (v) =>
+                    controller.model.applyRowValue(row, v, context),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ===================== RIGHT TOTALS =====================
+  Widget _rightTotals() {
+    final selections = controller.model.collectAllNumbersForPrint();
+
+    final List<int> multipliers = [1, 1, 2, 3, 5, 5, 10, 20, 25, 25];
+
+    // ✅ SLOT MULTIPLIER
+    final int slotMultiplier = slots.isNotEmpty ? slots.length : 1;
+
+    return Column(
+      children: [
+        const SizedBox(height: 8),
+
+        // ================= HEADER =================
+        SizedBox(
+          height: BettingGridModel.headerH - 16,
+          child: Row(
+            children: [
+              Container(
+                width: BettingGridModel.cellW,
+                alignment: Alignment.center,
+                color: Colors.yellow.shade600,
+                child: const Text(
+                  'QTY',
+                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700),
+                ),
+              ),
+              Container(
+                width: BettingGridModel.cellW,
+                alignment: Alignment.center,
+                color: Colors.pink.shade300,
+                child: const Text(
+                  'Amount',
+                  style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        const SizedBox(height: 16),
+
+        // ================= DATA =================
+        ...List.generate(10, (rangeIndex) {
+          int qty = 0;
+          double amt = 0.0;
+
+          for (final entry in selections.entries) {
+            final int number = entry.key;
+            final int numberQty = entry.value;
+
+            final int r = (number % 1000) ~/ 100;
+
+            if (r == rangeIndex) {
+              qty += numberQty;
+
+              if (controller.model.high) {
+                amt +=
+                    numberQty *
+                    controller.model.selectedPoint *
+                    multipliers[rangeIndex];
+              } else {
+                amt += numberQty * controller.model.selectedPoint;
+              }
+            }
+          }
+
+          // ✅ APPLY SLOT MULTIPLIER TO BOTH
+          final int finalQty = qty * slotMultiplier;
+          final double finalAmt = amt * slotMultiplier;
+
+          return Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Row(
+              children: [
+                Container(
+                  width: BettingGridModel.cellW,
+                  height: BettingGridModel.cellH - 12,
+                  alignment: Alignment.center,
+                  color: const Color.fromRGBO(52, 73, 95, 1),
+                  child: Text(
+                    finalQty.toString(),
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Container(
+                  width: BettingGridModel.cellW,
+                  height: BettingGridModel.cellH - 16,
+                  alignment: Alignment.center,
+                  color: const Color.fromRGBO(232, 206, 138, 1),
+                  child: Text(
+                    finalAmt.toStringAsFixed(0),
+                    style: const TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
+  // Widget _bottomSummary() {
+  //   return Row(
+  //     mainAxisAlignment: MainAxisAlignment.end,
+  //     children: [
+  //       Expanded(
+  //         child: Text(
+  //           () {
+  //             final keys = controller.model.collectAllNumbersForPrint().keys;
+  //
+  //             if (keys.isEmpty) {
+  //               return 'No numbers selected';
+  //             }
+  //
+  //             const int limit = 99;
+  //
+  //             // Convert → sort → zero-pad
+  //             final numbers = keys.toList()..sort();
+  //
+  //             final padded = numbers
+  //                 .map((e) => e.toString().padLeft(4, '0'))
+  //                 .toList();
+  //
+  //             final visible = padded.take(limit).join(', ');
+  //             final remaining = padded.length - limit;
+  //
+  //             if (padded.length > limit) {
+  //               return 'Selected numbers: $visible +$remaining more';
+  //             }
+  //
+  //             return 'Selected numbers: $visible';
+  //           }(),
+  //           style: const TextStyle(
+  //             fontSize: 8,
+  //             fontWeight: FontWeight.w600,
+  //             color: Color(0xFF222222),
+  //           ),
+  //         ),
+  //       ),
+  //
+  //       const SizedBox(width: 16),
+  //       _summaryItem(
+  //         'Total QTY',
+  //         (controller.model.getTotalQuantityAllSelected() * slots.length)
+  //             .toString(),
+  //         Icons.format_list_numbered,
+  //       ),
+  //       const SizedBox(width: 16),
+  //       _summaryItem(
+  //         'Total Amount',
+  //         '₹${controller.model.getTotalAmountAllSelected().toStringAsFixed(2)}',
+  //         Icons.attach_money,
+  //       ),
+  //     ],
+  //   );
+  // }
+
+  Widget _bottomSummary() {
+    final selections = controller.model.collectAllNumbersForPrint();
+    final keys = selections.keys;
+
+    final int slotMultiplier = slots.isEmpty ? 1 : slots.length;
+
+    final int baseQty = controller.model.getTotalQuantityAllSelected();
+
+    double totalAmount = 0.0;
+
+    final List<int> multipliers = [1, 1, 2, 3, 5, 5, 10, 20, 25, 25];
+
+    // ==========================================================
+    // LOW MODE → use existing total
+    // ==========================================================
+    if (!controller.model.high) {
+      final double baseAmount = controller.model.getTotalAmountAllSelected();
+
+      totalAmount = baseAmount * slotMultiplier;
+    }
+    // ==========================================================
+    // HIGH MODE → calculate with multiplier
+    // ==========================================================
+    else {
+      for (final entry in selections.entries) {
+        final int number = entry.key;
+        final int qty = entry.value;
+
+        final int rangeIndex = (number % 1000) ~/ 100;
+
+        int multiplier = 1;
+
+        if (rangeIndex >= 0 && rangeIndex < multipliers.length) {
+          multiplier = multipliers[rangeIndex];
+        }
+
+        totalAmount += qty * controller.model.selectedPoint * multiplier;
+      }
+
+      totalAmount *= slotMultiplier;
+    }
+
+    final int totalQty = baseQty * slotMultiplier;
+
+    // ==========================================================
+    // SELECTED NUMBERS TEXT
+    // ==========================================================
+
+    String selectedNumbersText() {
+      if (keys.isEmpty) {
+        return 'No numbers selected';
+      }
+
+      const int limit = 99;
+
+      final numbers = keys.toList()..sort();
+
+      final padded = numbers.map((e) => e.toString().padLeft(4, '0')).toList();
+
+      final visible = padded.take(limit).join(', ');
+      final remaining = padded.length - limit;
+
+      if (padded.length > limit) {
+        return 'Selected numbers: $visible +$remaining more';
+      }
+
+      return 'Selected numbers: $visible';
+    }
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        // Expanded(
+        //   child: Text(
+        //     selectedNumbersText(),
+        //     style: const TextStyle(
+        //       fontSize: 8,
+        //       fontWeight: FontWeight.w600,
+        //       color: Color(0xFF222222),
+        //     ),
+        //   ),
+        // ),
+        const SizedBox(width: 16),
+
+        _summaryItem(
+          'Total QTY',
+          totalQty.toString(),
+          Icons.format_list_numbered,
+        ),
+
+        const SizedBox(width: 16),
+
+        _summaryItem(
+          'Total Amount',
+          '₹${totalAmount.toStringAsFixed(2)}',
+          Icons.attach_money,
+        ),
+      ],
+    );
+  }
+
+  Widget _summaryItem(String label, String value, IconData icon) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 10,
+            color: Color(0xFF717171),
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Container(
+          width: 200,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 1),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border.all(color: Color(0xFFCCCCCC), width: 1),
+            borderRadius: BorderRadius.circular(0),
+          ),
+          child: Text(
+            value,
+            textAlign: TextAlign.center,
+
+            style: const TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFF222222),
+              letterSpacing: -0.5,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _bottomButtons(String userId) {
+    final TextEditingController barcodeCtrl = TextEditingController();
+    final FocusNode barcodeFocus = FocusNode();
+
+    return Row(
+      children: [
+        _modernBtn('Print', Icons.print, Colors.yellow.shade300, () {
+          _showPrintLoader(context, controller, widget.slot);
+        }),
+        const SizedBox(width: 8),
+
+        _modernBtn(
+          'Clear',
+          Icons.clear_all,
+          const Color(0xFFF59E9E),
+          _isClearing
+              ? () {}
+              : () async {
+                  setState(() {
+                    _isClearing = true;
+                  });
+
+                  try {
+                    final homeController = HomeController();
+                    await homeController.getWalletBalance();
+
+                    if (!mounted) return;
+
+                    setState(() {
+                      slots = [];
+                      controller.model.clear(context);
+                    });
+                  } catch (e) {
+                    debugPrint("Clear Error: $e");
+                  } finally {
+                    if (mounted) {
+                      setState(() {
+                        _isClearing = false;
+                      });
+                    }
+                  }
+                },
+        ),
+
+        Expanded(
+          child: SizedBox(
+            height: 20,
+            child: TextField(
+              controller: barcodeCtrl,
+              focusNode: barcodeFocus,
+              autofocus: true,
+              style: const TextStyle(fontSize: 12),
+              keyboardType: TextInputType.none,
+              // optional
+              decoration: const InputDecoration(
+                isDense: true,
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: 6,
+                  vertical: 0,
+                ),
+                border: OutlineInputBorder(
+                  borderSide: BorderSide(color: Colors.black),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: Colors.black),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderSide: BorderSide(color: Colors.black, width: 0.5),
+                ),
+                // hintText: 'Scan barcode',
+              ),
+              onSubmitted: (value) async {
+                // BARCODE VALUE IS HERE
+                print('Scanned: $value');
+              },
+            ),
+          ),
+        ),
+        _modernBtn(
+          'Claim',
+          Icons.check_circle_outline,
+          const Color(0xFFEAB676), // Tacao
+          () async {
+            final ok = await homeController.claim(
+              context: context,
+              id: barcodeCtrl.text.trim(),
+            );
+            if (ok) {
+              barcodeCtrl.clear(); // ready for next scan
+              barcodeFocus.requestFocus();
+            }
+          },
+        ),
+        const SizedBox(width: 8),
+
+        _modernBtn(
+          'Cancel',
+          Icons.cancel_outlined,
+          const Color(0xFFEAB676), // Tacao
+          () {},
+        ),
+
+        const SizedBox(width: 8),
+
+        _modernBtn(
+          'Transaction',
+          Icons.receipt_long_outlined,
+          Colors.deepPurple.shade300,
+          () {
+            openTransactionDialog(context, userId);
+          },
+        ),
+        const SizedBox(width: 8),
+
+        _modernBtn(
+          'Advanced Draw',
+          Icons.settings_outlined,
+          Colors.yellow.shade300,
+          () async {
+            final selectedSlots = await showSlotDialog(
+              context,
+              selectedTimes: slots,
+            );
+
+            setState(() {
+              slots = selectedSlots ?? [];
+            });
+            debugPrint(
+              selectedSlots!.isEmpty
+                  ? 'No slot selected'
+                  : selectedSlots
+                        .map(
+                          (s) =>
+                              '${s.hour.toString().padLeft(2, '0')}:${s.minute.toString().padLeft(2, '0')}',
+                        )
+                        .join(', '),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _modernBtn(
+    String text,
+    IconData icon,
+    Color bgColor,
+    VoidCallback fn,
+  ) {
+    return GestureDetector(
+      onTap: fn,
+      child: Container(
+        width: 100,
+        height: 20,
+        color: bgColor,
+        // sharp corners
+        alignment: Alignment.center,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.max,
+          children: [
+            Text(
+              text,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Colors.black,
+                fontWeight: FontWeight.w600,
+                fontSize: 12,
+                letterSpacing: 0.3,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showPrintLoader(
+    BuildContext context,
+    BettingGridController controller,
+    String slot,
+  ) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) {
+        return Dialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(0)),
+          elevation: 12,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 26),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(
+                  height: 38,
+                  width: 38,
+                  child: CircularProgressIndicator(strokeWidth: 3),
+                ),
+                const SizedBox(height: 18),
+                const Text(
+                  "Saving bet details…",
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  "Please wait while we prepare your print",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(fontSize: 13, color: Colors.grey),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+
+    /// 🔹 Do the actual print work
+    await controller.handlePrint(context, slot, slots, widget.id);
+
+    /// 🔹 Close loader after work is done
+    if (context.mounted) {
+      Navigator.of(context).pop();
+    }
+  }
+
+  Future<void> _openClaimDialog(BuildContext context) async {
+    final controller = HomeController();
+    final ticketCtrl = TextEditingController();
+    bool loading = false;
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black.withOpacity(0.45),
+      builder: (dialogCtx) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return Dialog(
+              insetPadding: const EdgeInsets.symmetric(horizontal: 20),
+              backgroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(0),
+              ),
+              child: SizedBox(
+                width: 320,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(22, 22, 22, 20),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      /// HEADER ICON
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFF7F7F7),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.confirmation_number_outlined,
+                          size: 22,
+                          color: Color(0xFF222222),
+                        ),
+                      ),
+
+                      const SizedBox(height: 14),
+
+                      /// TITLE
+                      const Text(
+                        "Claim ticket",
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF222222),
+                        ),
+                      ),
+
+                      const SizedBox(height: 6),
+
+                      /// SUBTITLE
+                      const Text(
+                        "Enter your ticket number to verify and claim your ticket.",
+                        style: TextStyle(
+                          fontSize: 13,
+                          height: 1.45,
+                          color: Color(0xFF717171),
+                        ),
+                      ),
+
+                      const SizedBox(height: 18),
+
+                      /// INPUT
+                      TextField(
+                        controller: ticketCtrl,
+                        keyboardType: TextInputType.number,
+                        decoration: InputDecoration(
+                          hintText: "Ticket number",
+                          hintStyle: const TextStyle(color: Color(0xFF9E9E9E)),
+                          filled: true,
+                          fillColor: const Color(0xFFF7F7F7),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 14,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(0),
+                            borderSide: BorderSide.none,
+                          ),
+                        ),
+                      ),
+
+                      const SizedBox(height: 20),
+
+                      // const Divider(height: 1),
+                      const SizedBox(height: 16),
+
+                      /// ACTIONS
+                      if (loading)
+                        const Center(
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      else
+                        Column(
+                          children: [
+                            SizedBox(
+                              width: double.infinity,
+                              child: OutlinedButton(
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: const Color(0xFF222222),
+                                  side: const BorderSide(
+                                    color: Color(0xFFE0E0E0),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 12,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(0),
+                                  ),
+                                ),
+                                onPressed: () => Navigator.pop(dialogCtx),
+                                child: const Text("Cancel"),
+                              ),
+                            ),
+
+                            const SizedBox(height: 10),
+
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: const Color(0xFF222222),
+                                  foregroundColor: Colors.white,
+                                  elevation: 0,
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 14,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(0),
+                                  ),
+                                ),
+                                onPressed: () async {
+                                  if (ticketCtrl.text.trim().isEmpty) return;
+
+                                  setState(() => loading = true);
+
+                                  final ok = await controller.claim(
+                                    context: context,
+                                    id: ticketCtrl.text.trim(),
+                                  );
+
+                                  setState(() => loading = false);
+
+                                  if (ok && dialogCtx.mounted) {
+                                    Navigator.pop(dialogCtx);
+                                    Navigator.pop(context);
+                                  }
+                                },
+                                child: const Text(
+                                  "Claim Ticket",
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    ticketCtrl.dispose();
+  }
+}
+
+
+
+
+    _future = widget.controller.getTransactions();
+import 'package:flutter/material.dart';
+import 'package:get/get.dart';
+import 'package:shreelott/controller/wallet_controller.dart';
+import '../controller/home_controller.dart';
+
+Future<void> openTransactionDialog(BuildContext context, String userId) async {
+  final controller = HomeController();
+
+  showDialog(
+    context: context,
+    barrierDismissible: true,
+    barrierColor: Colors.transparent,
+    builder: (_) {
+      return Dialog(
+        insetPadding: EdgeInsets.zero,
+        elevation: 0,
+        backgroundColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(0)),
+        child: _TransactionDialog(controller: controller, userId: userId),
+      );
+    },
+  ).then((_) => controller.dispose());
+}
+
+class _TransactionDialog extends StatefulWidget {
+  final HomeController controller;
+  final String userId;
+
+  const _TransactionDialog({required this.controller, required this.userId});
+
+  @override
+  State<_TransactionDialog> createState() => _TransactionDialogState();
+}
+
+class _TransactionDialogState extends State<_TransactionDialog> {
+  late Future<List<TransactionModel>> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = widget.controller.getTransactions();
+  }
+
+  void _reload() {
+    setState(() {
+      _future = widget.controller.getTransactions();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: Image.asset(
+              "assets/bg_image_1.png",
+              fit: BoxFit.cover,
+            ),
+          ),
+          Positioned.fill(
+            child: Container(
+              color: Colors.black.withOpacity(0.4),
+            ),
+          ),
+          Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                maxWidth: 500,
+                minWidth: 300,
+                maxHeight: 520,
+              ),
+              child: Container(
+                margin: const EdgeInsets.symmetric(horizontal: 20),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  gradient: RadialGradient(
+                    center: const Alignment(0.3, -0.3),
+                    radius: 1.5,
+                    colors: [
+                      const Color(0xFFFFD700).withOpacity(0.15),
+                      const Color(0xFF7B3FF2).withOpacity(0.95),
+                      const Color(0xFF5A1F99).withOpacity(0.98),
+                    ],
+                    stops: const [0.0, 0.6, 1.0],
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.6),
+                      blurRadius: 30,
+                      offset: const Offset(0, 20),
+                    ),
+                  ],
+                  border: Border.all(
+                    color: Colors.white.withOpacity(0.15),
+                    width: 1.5,
+                  ),
+                ),
+                child: FutureBuilder<List<TransactionModel>>(
+                  future: _future,
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return _loading();
+                    }
+                    if (snapshot.hasError ||
+                        snapshot.data == null ||
+                        snapshot.data!.isEmpty) {
+                      return _empty();
+                    }
+                    return _content(context, snapshot.data!, widget.userId);
+                  },
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _onCancel(TransactionModel t) async {
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black.withOpacity(0.45),
+      builder: (_) {
+        return _CancelBetDialog(
+          controller: widget.controller,
+          transaction: t,
+          onSuccess: () {
+            Navigator.pop(context);
+            _reload();
+          },
+        );
+      },
+    );
+  }
+
+  Widget _content(
+      BuildContext context,
+      List<TransactionModel> list,
+      String userId,
+      ) {
+    return Stack(
+      children: [
+        Column(
+          children: [
+            _header(),
+            const SizedBox(height: 8),
+            _tableHeader(),
+            Expanded(
+              child: ListView.builder(
+                padding: EdgeInsets.zero,
+                itemCount: list.length,
+                itemBuilder: (_, i) =>
+                    _tableRow(i + 1, list[i], _onCancel, context, userId),
+              ),
+            ),
+          ],
+        ),
+        Positioned(
+          top: 10,
+          right: 10,
+          child: InkWell(
+            onTap: () => Navigator.pop(context),
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.2),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.close,
+                size: 18,
+                color: Colors.white,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _header() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 18, 48, 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: const [
+          Text(
+            "Your transactions",
+            style: TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
+            ),
+          ),
+          SizedBox(height: 4),
+          Text(
+            "Last 15 transactions",
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.white70,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CancelBetDialog extends StatefulWidget {
+  final HomeController controller;
+  final TransactionModel transaction;
+  final VoidCallback onSuccess;
+
+  const _CancelBetDialog({
+    required this.controller,
+    required this.transaction,
+    required this.onSuccess,
+  });
+
+  @override
+  State<_CancelBetDialog> createState() => _CancelBetDialogState();
+}
+
+class _CancelBetDialogState extends State<_CancelBetDialog> {
+  bool _loading = false;
+  bool? _success;
+  String message = "";
+
+  Future<void> _cancel() async {
+    if (!mounted) return;
+
+    setState(() {
+      _loading = true;
+    });
+
+    try {
+      final result = await widget.controller.cancelBet(
+        id: widget.transaction.pid.replaceAll("SL", ""),
+      );
+
+      debugPrint("Cancel Response: $result");
+
+      final WalletController walletController = Get.put(WalletController());
+
+      final bool isSuccess = result != null && result["success"] == true;
+
+      final String responseMessage =
+          result?["message"]?.toString() ?? "Unknown error";
+
+      if (result["wallet"] != null) {
+        print("Updating the wallet balance ");
+        walletController.setBalance((result["wallet"] as num).toDouble());
+      }
+
+      if (!mounted) return;
+
+      setState(() {
+        _loading = false;
+        _success = isSuccess;
+        message = responseMessage;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message ?? ""),
+          backgroundColor: isSuccess ? Colors.green : Colors.redAccent,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+
+      if (isSuccess) {
+        Future.delayed(const Duration(milliseconds: 900), () {
+          if (mounted) {
+            widget.onSuccess();
+          }
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+
+      debugPrint("Cancel Error: $e");
+
+      setState(() {
+        _loading = false;
+        _success = false;
+        message = "Something went wrong";
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Something went wrong"),
+          backgroundColor: Colors.redAccent,
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Container(
+        width: 280,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          gradient: RadialGradient(
+            center: const Alignment(0.3, -0.3),
+            radius: 1.5,
+            colors: [
+              const Color(0xFFFFD700).withOpacity(0.15),
+              const Color(0xFF7B3FF2).withOpacity(0.95),
+              const Color(0xFF5A1F99).withOpacity(0.98),
+            ],
+            stops: const [0.0, 0.6, 1.0],
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.6),
+              blurRadius: 30,
+              offset: const Offset(0, 20),
+            ),
+          ],
+          border: Border.all(
+            color: Colors.white.withOpacity(0.15),
+            width: 1.5,
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  gradient: RadialGradient(
+                    center: const Alignment(0.3, -0.3),
+                    radius: 1.2,
+                    colors: [
+                      const Color(0xFFFFD700).withOpacity(0.3),
+                      const Color(0xFFFFA500).withOpacity(0.2),
+                    ],
+                  ),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  _success == true ? Icons.check : Icons.warning_amber_rounded,
+                  size: 20,
+                  color: _success == true
+                      ? const Color(0xFFFFD700)
+                      : Colors.red.shade300,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                _success == true
+                    ? "Bet cancelled"
+                    : _success == false
+                    ? message ?? "Cancellation failed"
+                    : "Cancel this bet?",
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: Colors.white,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                _success == true
+                    ? "Your bet has been cancelled successfully."
+                    : _success == false
+                    ? "Unable to cancel. Please try again."
+                    : "Once cancelled, this bet won't be included in the draw.",
+                style: const TextStyle(
+                  fontSize: 12,
+                  height: 1.4,
+                  color: Colors.white70,
+                ),
+              ),
+              const SizedBox(height: 14),
+              if (_loading)
+                const Center(
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                )
+              else if (_success == null)
+                Column(
+                  children: [
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton(
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: BorderSide(
+                            color: Colors.white.withOpacity(0.3),
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text("Keep"),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFE53935),
+                          foregroundColor: Colors.white,
+                          elevation: 2,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        onPressed: _cancel,
+                        child: const Text("Cancel Bet"),
+                      ),
+                    ),
+                  ],
+                )
+              else
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton(
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(
+                        color: Colors.white.withOpacity(0.3),
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    onPressed: () => Navigator.pop(context),
+                    child: const Text(
+                      "Close",
+                      style: TextStyle(color: Colors.white),
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+Widget _tableHeader() {
+  const style = TextStyle(
+    fontSize: 12,
+    fontWeight: FontWeight.w600,
+    color: Colors.white70,
+  );
+
+  return Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
+    child: Row(
+      children: const [
+        Expanded(flex: 2, child: Text("Sr No", style: style)),
+        Expanded(flex: 4, child: Text("Ticket", style: style)),
+        Expanded(flex: 2, child: Text("Slot", style: style)),
+        Expanded(
+          flex: 2,
+          child: Text("Load", style: style, textAlign: TextAlign.right),
+        ),
+        Expanded(
+          flex: 2,
+          child: Text("Action", style: style, textAlign: TextAlign.center),
+        ),
+      ],
+    ),
+  );
+}
+
+Widget _tableRow(
+    int index,
+    TransactionModel t,
+    Function(TransactionModel) onCancel,
+    BuildContext context,
+    String userId,
+    ) {
+  final bool isActive = t.status.toLowerCase() == "active";
+
+  return Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+    child: Row(
+      children: [
+        Expanded(
+          flex: 2,
+          child: Text(
+            index.toString(),
+            style: const TextStyle(color: Colors.white),
+          ),
+        ),
+        Expanded(
+          flex: 4,
+          child: Text(
+            t.pid,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              fontWeight: FontWeight.w500,
+              color: Color(0xFFFFD700),
+            ),
+          ),
+        ),
+        Expanded(
+          flex: 2,
+          child: Text(
+            t.slot,
+            style: const TextStyle(color: Colors.white70),
+          ),
+        ),
+        Expanded(
+          flex: 2,
+          child: Text(
+            "₹ ${t.totalLoad}",
+            textAlign: TextAlign.right,
+            style: const TextStyle(
+              fontWeight: FontWeight.w600,
+              color: Colors.white,
+            ),
+          ),
+        ),
+        Expanded(
+          flex: 2,
+          child: isActive
+              ? Column(
+            children: [
+              GestureDetector(
+                onTap: () => onCancel(t),
+                child: const Text(
+                  "Cancel",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Color(0xFFFF6B6B),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 4),
+              GestureDetector(
+                onTap: () {
+                  HomeController controller = HomeController();
+                  controller.reprintTicket(
+                    ticketId: t.pid.replaceAll("SL", ""),
+                    context: context,
+                    userId: userId,
+                  );
+                },
+                child: const Text(
+                  "Reprint",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Color(0xFFFFD700),
+                    fontWeight: FontWeight.w600,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+            ],
+          )
+              : const Text(
+            "Cancelled",
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.white38,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+Widget _loading() {
+  return const SizedBox(
+    height: 220,
+    child: Center(
+      child: CircularProgressIndicator(
+        strokeWidth: 2,
+        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+      ),
+    ),
+  );
+}
+
+Widget _empty() {
+  return const SizedBox(
+    height: 220,
+    child: Center(
+      child: Text(
+        "No transactions found",
+        style: TextStyle(
+          fontSize: 14,
+          color: Colors.white70,
+        ),
+      ),
+    ),
+  );
+}import 'package:flutter/material.dart';
+ import 'package:get/get.dart';
+ import 'package:shreelott/controller/wallet_controller.dart';
+ import '../controller/home_controller.dart';
+
+ Future<void> openTransactionDialog(BuildContext context, String userId) async {
+   final controller = HomeController();
+
+   showDialog(
+     context: context,
+     barrierDismissible: true,
+     barrierColor: Colors.transparent,
+     builder: (_) {
+       return Dialog(
+         insetPadding: EdgeInsets.zero,
+         elevation: 0,
+         backgroundColor: Colors.transparent,
+         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(0)),
+         child: _TransactionDialog(controller: controller, userId: userId),
+       );
+     },
+   ).then((_) => controller.dispose());
+ }
+
+ class _TransactionDialog extends StatefulWidget {
+   final HomeController controller;
+   final String userId;
+
+   const _TransactionDialog({required this.controller, required this.userId});
+
+   @override
+   State<_TransactionDialog> createState() => _TransactionDialogState();
+ }
+
+ class _TransactionDialogState extends State<_TransactionDialog> {
+   late Future<List<TransactionModel>> _future;
+
+   @override
+   void initState() {
+     super.initState();
+     _future = widget.controller.getTransactions();
+   }
+
+   void _reload() {
+     setState(() {
+       _future = widget.controller.getTransactions();
+     });
+   }
+
+   @override
+   Widget build(BuildContext context) {
+     return Scaffold(
+       backgroundColor: Colors.transparent,
+       body: Stack(
+         children: [
+           Positioned.fill(
+             child: Image.asset(
+               "assets/bg_image_1.png",
+               fit: BoxFit.cover,
+             ),
+           ),
+           Positioned.fill(
+             child: Container(
+               color: Colors.black.withOpacity(0.4),
+             ),
+           ),
+           Center(
+             child: ConstrainedBox(
+               constraints: const BoxConstraints(
+                 maxWidth: 500,
+                 minWidth: 300,
+                 maxHeight: 520,
+               ),
+               child: Container(
+                 margin: const EdgeInsets.symmetric(horizontal: 20),
+                 decoration: BoxDecoration(
+                   borderRadius: BorderRadius.circular(16),
+                   gradient: RadialGradient(
+                     center: const Alignment(0.3, -0.3),
+                     radius: 1.5,
+                     colors: [
+                       const Color(0xFFFFD700).withOpacity(0.15),
+                       const Color(0xFF7B3FF2).withOpacity(0.95),
+                       const Color(0xFF5A1F99).withOpacity(0.98),
+                     ],
+                     stops: const [0.0, 0.6, 1.0],
+                   ),
+                   boxShadow: [
+                     BoxShadow(
+                       color: Colors.black.withOpacity(0.6),
+                       blurRadius: 30,
+                       offset: const Offset(0, 20),
+                     ),
+                   ],
+                   border: Border.all(
+                     color: Colors.white.withOpacity(0.15),
+                     width: 1.5,
+                   ),
+                 ),
+                 child: FutureBuilder<List<TransactionModel>>(
+                   future: _future,
+                   builder: (context, snapshot) {
+                     if (snapshot.connectionState == ConnectionState.waiting) {
+                       return _loading();
+                     }
+                     if (snapshot.hasError ||
+                         snapshot.data == null ||
+                         snapshot.data!.isEmpty) {
+                       return _empty();
+                     }
+                     return _content(context, snapshot.data!, widget.userId);
+                   },
+                 ),
+               ),
+             ),
+           ),
+         ],
+       ),
+     );
+   }
+
+   Future<void> _onCancel(TransactionModel t) async {
+     await showDialog(
+       context: context,
+       barrierDismissible: false,
+       barrierColor: Colors.black.withOpacity(0.45),
+       builder: (_) {
+         return _CancelBetDialog(
+           controller: widget.controller,
+           transaction: t,
+           onSuccess: () {
+             Navigator.pop(context);
+             _reload();
+           },
+         );
+       },
+     );
+   }
+
+   Widget _content(
+       BuildContext context,
+       List<TransactionModel> list,
+       String userId,
+       ) {
+     return Stack(
+       children: [
+         Column(
+           children: [
+             _header(),
+             const SizedBox(height: 8),
+             _tableHeader(),
+             Expanded(
+               child: ListView.builder(
+                 padding: EdgeInsets.zero,
+                 itemCount: list.length,
+                 itemBuilder: (_, i) =>
+                     _tableRow(i + 1, list[i], _onCancel, context, userId),
+               ),
+             ),
+           ],
+         ),
+         Positioned(
+           top: 10,
+           right: 10,
+           child: InkWell(
+             onTap: () => Navigator.pop(context),
+             borderRadius: BorderRadius.circular(8),
+             child: Container(
+               padding: const EdgeInsets.all(6),
+               decoration: BoxDecoration(
+                 color: Colors.white.withOpacity(0.2),
+                 shape: BoxShape.circle,
+               ),
+               child: const Icon(
+                 Icons.close,
+                 size: 18,
+                 color: Colors.white,
+               ),
+             ),
+           ),
+         ),
+       ],
+     );
+   }
+
+   Widget _header() {
+     return Padding(
+       padding: const EdgeInsets.fromLTRB(18, 18, 48, 12),
+       child: Column(
+         crossAxisAlignment: CrossAxisAlignment.start,
+         children: const [
+           Text(
+             "Your transactions",
+             style: TextStyle(
+               fontSize: 17,
+               fontWeight: FontWeight.w600,
+               color: Colors.white,
+             ),
+           ),
+           SizedBox(height: 4),
+           Text(
+             "Last 15 transactions",
+             style: TextStyle(
+               fontSize: 12,
+               color: Colors.white70,
+             ),
+           ),
+         ],
+       ),
+     );
+   }
+ }
+
+ class _CancelBetDialog extends StatefulWidget {
+   final HomeController controller;
+   final TransactionModel transaction;
+   final VoidCallback onSuccess;
+
+   const _CancelBetDialog({
+     required this.controller,
+     required this.transaction,
+     required this.onSuccess,
+   });
+
+   @override
+   State<_CancelBetDialog> createState() => _CancelBetDialogState();
+ }
+
+ class _CancelBetDialogState extends State<_CancelBetDialog> {
+   bool _loading = false;
+   bool? _success;
+   String message = "";
+
+   Future<void> _cancel() async {
+     if (!mounted) return;
+
+     setState(() {
+       _loading = true;
+     });
+
+     try {
+       final result = await widget.controller.cancelBet(
+         id: widget.transaction.pid.replaceAll("SL", ""),
+       );
+
+       debugPrint("Cancel Response: $result");
+
+       final WalletController walletController = Get.put(WalletController());
+
+       final bool isSuccess = result != null && result["success"] == true;
+
+       final String responseMessage =
+           result?["message"]?.toString() ?? "Unknown error";
+
+       if (result["wallet"] != null) {
+         print("Updating the wallet balance ");
+         walletController.setBalance((result["wallet"] as num).toDouble());
+       }
+
+       if (!mounted) return;
+
+       setState(() {
+         _loading = false;
+         _success = isSuccess;
+         message = responseMessage;
+       });
+
+       ScaffoldMessenger.of(context).showSnackBar(
+         SnackBar(
+           content: Text(message ?? ""),
+           backgroundColor: isSuccess ? Colors.green : Colors.redAccent,
+           behavior: SnackBarBehavior.floating,
+           duration: const Duration(seconds: 3),
+         ),
+       );
+
+       if (isSuccess) {
+         Future.delayed(const Duration(milliseconds: 900), () {
+           if (mounted) {
+             widget.onSuccess();
+           }
+         });
+       }
+     } catch (e) {
+       if (!mounted) return;
+
+       debugPrint("Cancel Error: $e");
+
+       setState(() {
+         _loading = false;
+         _success = false;
+         message = "Something went wrong";
+       });
+
+       ScaffoldMessenger.of(context).showSnackBar(
+         const SnackBar(
+           content: Text("Something went wrong"),
+           backgroundColor: Colors.redAccent,
+           behavior: SnackBarBehavior.floating,
+         ),
+       );
+     }
+   }
+
+   @override
+   Widget build(BuildContext context) {
+     return Dialog(
+       backgroundColor: Colors.transparent,
+       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+       child: Container(
+         width: 280,
+         decoration: BoxDecoration(
+           borderRadius: BorderRadius.circular(16),
+           gradient: RadialGradient(
+             center: const Alignment(0.3, -0.3),
+             radius: 1.5,
+             colors: [
+               const Color(0xFFFFD700).withOpacity(0.15),
+               const Color(0xFF7B3FF2).withOpacity(0.95),
+               const Color(0xFF5A1F99).withOpacity(0.98),
+             ],
+             stops: const [0.0, 0.6, 1.0],
+           ),
+           boxShadow: [
+             BoxShadow(
+               color: Colors.black.withOpacity(0.6),
+               blurRadius: 30,
+               offset: const Offset(0, 20),
+             ),
+           ],
+           border: Border.all(
+             color: Colors.white.withOpacity(0.15),
+             width: 1.5,
+           ),
+         ),
+         child: Padding(
+           padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
+           child: Column(
+             mainAxisSize: MainAxisSize.min,
+             crossAxisAlignment: CrossAxisAlignment.start,
+             children: [
+               Container(
+                 width: 36,
+                 height: 36,
+                 decoration: BoxDecoration(
+                   gradient: RadialGradient(
+                     center: const Alignment(0.3, -0.3),
+                     radius: 1.2,
+                     colors: [
+                       const Color(0xFFFFD700).withOpacity(0.3),
+                       const Color(0xFFFFA500).withOpacity(0.2),
+                     ],
+                   ),
+                   shape: BoxShape.circle,
+                 ),
+                 child: Icon(
+                   _success == true ? Icons.check : Icons.warning_amber_rounded,
+                   size: 20,
+                   color: _success == true
+                       ? const Color(0xFFFFD700)
+                       : Colors.red.shade300,
+                 ),
+               ),
+               const SizedBox(height: 12),
+               Text(
+                 _success == true
+                     ? "Bet cancelled"
+                     : _success == false
+                     ? message ?? "Cancellation failed"
+                     : "Cancel this bet?",
+                 style: const TextStyle(
+                   fontSize: 15,
+                   fontWeight: FontWeight.w600,
+                   color: Colors.white,
+                 ),
+               ),
+               const SizedBox(height: 6),
+               Text(
+                 _success == true
+                     ? "Your bet has been cancelled successfully."
+                     : _success == false
+                     ? "Unable to cancel. Please try again."
+                     : "Once cancelled, this bet won't be included in the draw.",
+                 style: const TextStyle(
+                   fontSize: 12,
+                   height: 1.4,
+                   color: Colors.white70,
+                 ),
+               ),
+               const SizedBox(height: 14),
+               if (_loading)
+                 const Center(
+                   child: CircularProgressIndicator(
+                     strokeWidth: 2,
+                     valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                   ),
+                 )
+               else if (_success == null)
+                 Column(
+                   children: [
+                     SizedBox(
+                       width: double.infinity,
+                       child: OutlinedButton(
+                         style: OutlinedButton.styleFrom(
+                           foregroundColor: Colors.white,
+                           side: BorderSide(
+                             color: Colors.white.withOpacity(0.3),
+                           ),
+                           shape: RoundedRectangleBorder(
+                             borderRadius: BorderRadius.circular(8),
+                           ),
+                         ),
+                         onPressed: () => Navigator.pop(context),
+                         child: const Text("Keep"),
+                       ),
+                     ),
+                     const SizedBox(height: 8),
+                     SizedBox(
+                       width: double.infinity,
+                       child: ElevatedButton(
+                         style: ElevatedButton.styleFrom(
+                           backgroundColor: const Color(0xFFE53935),
+                           foregroundColor: Colors.white,
+                           elevation: 2,
+                           shape: RoundedRectangleBorder(
+                             borderRadius: BorderRadius.circular(8),
+                           ),
+                         ),
+                         onPressed: _cancel,
+                         child: const Text("Cancel Bet"),
+                       ),
+                     ),
+                   ],
+                 )
+               else
+                 SizedBox(
+                   width: double.infinity,
+                   child: OutlinedButton(
+                     style: OutlinedButton.styleFrom(
+                       side: BorderSide(
+                         color: Colors.white.withOpacity(0.3),
+                       ),
+                       shape: RoundedRectangleBorder(
+                         borderRadius: BorderRadius.circular(8),
+                       ),
+                     ),
+                     onPressed: () => Navigator.pop(context),
+                     child: const Text(
+                       "Close",
+                       style: TextStyle(color: Colors.white),
+                     ),
+                   ),
+                 ),
+             ],
+           ),
+         ),
+       ),
+     );
+   }
+ }
+
+ Widget _tableHeader() {
+   const style = TextStyle(
+     fontSize: 12,
+     fontWeight: FontWeight.w600,
+     color: Colors.white70,
+   );
+
+   return Padding(
+     padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 6),
+     child: Row(
+       children: const [
+         Expanded(flex: 2, child: Text("Sr No", style: style)),
+         Expanded(flex: 4, child: Text("Ticket", style: style)),
+         Expanded(flex: 2, child: Text("Slot", style: style)),
+         Expanded(
+           flex: 2,
+           child: Text("Load", style: style, textAlign: TextAlign.right),
+         ),
+         Expanded(
+           flex: 2,
+           child: Text("Action", style: style, textAlign: TextAlign.center),
+         ),
+       ],
+     ),
+   );
+ }
+
+ Widget _tableRow(
+     int index,
+     TransactionModel t,
+     Function(TransactionModel) onCancel,
+     BuildContext context,
+     String userId,
+     ) {
+   final bool isActive = t.status.toLowerCase() == "active";
+
+   return Padding(
+     padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+     child: Row(
+       children: [
+         Expanded(
+           flex: 2,
+           child: Text(
+             index.toString(),
+             style: const TextStyle(color: Colors.white),
+           ),
+         ),
+         Expanded(
+           flex: 4,
+           child: Text(
+             t.pid,
+             overflow: TextOverflow.ellipsis,
+             style: const TextStyle(
+               fontWeight: FontWeight.w500,
+               color: Color(0xFFFFD700),
+             ),
+           ),
+         ),
+         Expanded(
+           flex: 2,
+           child: Text(
+             t.slot,
+             style: const TextStyle(color: Colors.white70),
+           ),
+         ),
+         Expanded(
+           flex: 2,
+           child: Text(
+             "₹ ${t.totalLoad}",
+             textAlign: TextAlign.right,
+             style: const TextStyle(
+               fontWeight: FontWeight.w600,
+               color: Colors.white,
+             ),
+           ),
+         ),
+         Expanded(
+           flex: 2,
+           child: isActive
+               ? Column(
+             children: [
+               GestureDetector(
+                 onTap: () => onCancel(t),
+                 child: const Text(
+                   "Cancel",
+                   textAlign: TextAlign.center,
+                   style: TextStyle(
+                     color: Color(0xFFFF6B6B),
+                     fontWeight: FontWeight.w600,
+                     fontSize: 12,
+                   ),
+                 ),
+               ),
+               const SizedBox(height: 4),
+               GestureDetector(
+                 onTap: () {
+                   HomeController controller = HomeController();
+                   controller.reprintTicket(
+                     ticketId: t.pid.replaceAll("SL", ""),
+                     context: context,
+                     userId: userId,
+                   );
+                 },
+                 child: const Text(
+                   "Reprint",
+                   textAlign: TextAlign.center,
+                   style: TextStyle(
+                     color: Color(0xFFFFD700),
+                     fontWeight: FontWeight.w600,
+                     fontSize: 12,
+                   ),
+                 ),
+               ),
+             ],
+           )
+               : const Text(
+             "Cancelled",
+             textAlign: TextAlign.center,
+             style: TextStyle(
+               fontSize: 12,
+               color: Colors.white38,
+             ),
+           ),
+         ),
+       ],
+     ),
+   );
+ }
+
+ Widget _loading() {
+   return const SizedBox(
+     height: 220,
+     child: Center(
+       child: CircularProgressIndicator(
+         strokeWidth: 2,
+         valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+       ),
+     ),
+   );
+ }
+
+ Widget _empty() {
+   return const SizedBox(
+     height: 220,
+     child: Center(
+       child: Text(
+         "No transactions found",
+         style: TextStyle(
+           fontSize: 14,
+           color: Colors.white70,
+         ),
+       ),
+     ),
+   );
+ }
