@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart';
+import 'package:shreelott/screens/helpers/batting_grid_view.dart';
 import 'package:shreelott/service/ticket_print_service.dart';
 
 import '../consts/api_consts.dart';
@@ -179,36 +180,48 @@ class _ResultDialogState extends State<ResultDialog> {
                     // Content (Results grid)
                     Expanded(child: _content()),
 
-                    // Print button
                     Align(
-                      alignment: Alignment.centerRight,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.accentYellow,
-                          foregroundColor: AppColors.textDark,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 28,
-                            vertical: 14,
-                          ),
-                          elevation: 8,
-                          shadowColor: AppColors.accentYellow.withOpacity(0.5),
-                        ),
-                        onPressed: () {
+                      alignment: Alignment.bottomRight,
+                      child: ModernBtn(
+                        text: "Print Result",
+                        bgColor: Colors.green,
+                        width: 200,
+                        height: 30,
+                        onTap: () {
                           _showPrintOptions(results);
                         },
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.print),
-                            SizedBox(width: 8),
-                            Text(
-                              "Print Result",
-                              style: TextStyle(fontWeight: FontWeight.w600),
-                            ),
-                          ],
-                        ),
                       ),
                     ),
+                    // Print button
+                    // Align(
+                    //   alignment: Alignment.centerRight,
+                    //   child: ElevatedButton(
+                    //     style: ElevatedButton.styleFrom(
+                    //       backgroundColor: AppColors.accentYellow,
+                    //       foregroundColor: AppColors.textDark,
+                    //       padding: const EdgeInsets.symmetric(
+                    //         horizontal: 28,
+                    //         vertical: 14,
+                    //       ),
+                    //       elevation: 8,
+                    //       shadowColor: AppColors.accentYellow.withOpacity(0.5),
+                    //     ),
+                    //     onPressed: () {
+                    //       _showPrintOptions(results);
+                    //     },
+                    //     child: const Row(
+                    //       mainAxisSize: MainAxisSize.min,
+                    //       children: [
+                    //         Icon(Icons.print),
+                    //         SizedBox(width: 8),
+                    //         Text(
+                    //           "Print Result",
+                    //           style: TextStyle(fontWeight: FontWeight.w600),
+                    //         ),
+                    //       ],
+                    //     ),
+                    //   ),
+                    // ),
                   ],
                 ),
               ),
@@ -443,59 +456,100 @@ class _ResultDialogState extends State<ResultDialog> {
 
   /// Show print format options
   void _showPrintOptions(List<ResultItem> resultItems) {
-    showDialog(
+    showModalBottomSheet(
       context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: AppColors.primaryDarker,
-        title: const Text(
-          "Select Print Format",
-          style: TextStyle(color: AppColors.textPrimary),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              await TicketPrintService.printResult(
-                context,
-                resultItems,
-                PdfPageFormat.a4,
-                DateFormat('dd MMM yyyy').format(selectedDate),
-                DateFormat('hh:mm a').format(
-                  DateTime(0, 0, 0, selectedTime.hour, selectedTime.minute),
-                ),
-              );
-            },
-            child: const Text(
-              "A4 Page",
-              style: TextStyle(
-                color: AppColors.accentGreen,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+      backgroundColor: Colors.transparent,
+      builder: (_) {
+        return Container(
+          padding: const EdgeInsets.fromLTRB(20, 24, 20, 30),
+          decoration: const BoxDecoration(
+            color: AppColors.primaryDarker,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
           ),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              await TicketPrintService.printResult(
-                context,
-                resultItems,
-                PdfPageFormat.roll80,
-                DateFormat('dd MMM yyyy').format(selectedDate),
-                DateFormat('hh:mm a').format(
-                  DateTime(0, 0, 0, selectedTime.hour, selectedTime.minute),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Center(
+                child: SizedBox(
+                  width: 40,
+                  height: 4,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: AppColors.borderLight,
+                      borderRadius: BorderRadius.all(Radius.circular(2)),
+                    ),
+                  ),
                 ),
-              );
-            },
-            child: const Text(
-              "Thermal",
-              style: TextStyle(
-                color: AppColors.accentYellow,
-                fontWeight: FontWeight.w600,
               ),
-            ),
+              const SizedBox(height: 24),
+
+              const Text(
+                "Select Print Format",
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+
+              const SizedBox(height: 8),
+
+              const Text(
+                "Choose the format you would like to print.",
+                style: TextStyle(fontSize: 14, color: AppColors.textSecondary),
+              ),
+
+              const SizedBox(height: 24),
+
+              Row(
+                children: [
+                  ModernBtn(
+                    text: "A4 Page",
+                    bgColor: Colors.green,
+                    width: 200,
+                    height: 30,
+                    onTap: () async {
+                      Navigator.pop(context);
+                      await TicketPrintService.printResult(
+                        context,
+                        resultItems,
+                        PdfPageFormat.a4,
+                        DateFormat('dd MMM yyyy').format(selectedDate),
+                        DateFormat('hh:mm a').format(
+                          DateTime(0, 0, 0, selectedTime.hour, selectedTime.minute),
+                        ),
+                      );
+                    },
+                  ),
+
+                  const SizedBox(width: 14),
+
+                  ModernBtn(
+                    text: "Thermal",
+                    textColor: Colors.black,
+                    bgColor: Colors.yellow,
+                    width: 200,
+                    height: 30,
+                    onTap: () async {
+                      Navigator.pop(context);
+                      await TicketPrintService.printResult(
+                        context,
+                        resultItems,
+                        PdfPageFormat.roll80,
+                        DateFormat('dd MMM yyyy').format(selectedDate),
+                        DateFormat('hh:mm a').format(
+                          DateTime(0, 0, 0, selectedTime.hour, selectedTime.minute),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            ],
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

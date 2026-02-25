@@ -49,25 +49,36 @@ class ShopReportData {
     debugPrint('│ totalList count   : ${totalList.length}');
     debugPrint('│ data_temp         : $tempData');
 
-    /// Parse rows
-    final List<ShopReportRow> rows =
-    rowList.map((e) => ShopReportRow.fromJson(e)).toList();
+    /// Extract temp values
+    final String tempDate = tempData['draw_date'] ?? '';
+    final double extraSale = _toDouble(tempData['sale']);
+    final double extraCommission = _toDouble(tempData['commission']);
+
+    debugPrint('│ tempDate          : $tempDate');
+    debugPrint('│ extraSale         : $extraSale');
+    debugPrint('│ extraCommission   : $extraCommission');
+
+    /// Parse rows and merge temp into matching date
+    final List<ShopReportRow> rows = rowList.map((e) {
+      final row = ShopReportRow.fromJson(e);
+
+      if (row.date == tempDate) {
+        debugPrint('│ Merging temp into row: ${row.date}');
+        return row.copyWith(
+          totalLoad: row.totalLoad + extraSale,
+          commission: row.commission + extraCommission,
+        );
+      }
+
+      return row;
+    }).toList();
 
     /// Parse base total
     final ShopReportTotal baseTotal = totalList.isNotEmpty
         ? ShopReportTotal.fromJson(totalList.first)
         : ShopReportTotal.empty();
 
-    debugPrint('│ baseTotal         : $baseTotal');
-
-    /// Extract extra values from data_temp
-    final double extraSale = _toDouble(tempData['sale']);
-    final double extraCommission = _toDouble(tempData['commission']);
-
-    debugPrint('│ extraSale         : $extraSale');
-    debugPrint('│ extraCommission   : $extraCommission');
-
-    /// Merge data_temp sale & commission into the final total
+    /// Merge temp into total also
     final ShopReportTotal finalTotal = baseTotal.copyWith(
       totalLoad: baseTotal.totalLoad + extraSale,
       commission: baseTotal.commission + extraCommission,
@@ -112,8 +123,24 @@ class ShopReportRow {
       winning: _toDouble(json['winning_amount_paid']),
       endPoint: _toDouble(json['end_point']),
     );
+
     debugPrint('  ShopReportRow: $row');
     return row;
+  }
+
+  ShopReportRow copyWith({
+    double? totalLoad,
+    double? commission,
+    double? winning,
+    double? endPoint,
+  }) {
+    return ShopReportRow(
+      date: date,
+      totalLoad: totalLoad ?? this.totalLoad,
+      commission: commission ?? this.commission,
+      winning: winning ?? this.winning,
+      endPoint: endPoint ?? this.endPoint,
+    );
   }
 
   @override

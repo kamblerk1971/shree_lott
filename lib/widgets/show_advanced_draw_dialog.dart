@@ -309,7 +309,15 @@ class _SlotDialogState extends State<_SlotDialog> {
 
   /// Round time to nearest quarter hour
   DateTime _roundToQuarter(DateTime dt) {
-    final minute = ((dt.minute + 14) ~/ 15) * 15;
+    final DateTime minTime = DateTime(dt.year, dt.month, dt.day, 9, 45);
+
+    // 🔒 If before 09:30 AM → force 09:30 AM
+    if (dt.isBefore(minTime)) {
+      return minTime;
+    }
+
+    // ⏱️ Round up to next 15 minutes
+    final int minute = ((dt.minute + 14) ~/ 15) * 15;
 
     return DateTime(
       dt.year,

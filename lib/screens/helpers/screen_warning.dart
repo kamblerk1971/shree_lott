@@ -4,8 +4,8 @@ class SmallScreenWarning extends StatelessWidget {
   const SmallScreenWarning({super.key});
 
   // 🔹 ACTUAL APP CONFIG (KEEP IN SYNC WITH MyApp)
-  static const double minWidth = 1250;
-  static const double minHeight = 630;
+  static const double minWidth = 1300;
+  static const double minHeight = 650;
 
   @override
   Widget build(BuildContext context) {
@@ -17,11 +17,7 @@ class SmallScreenWarning extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(
-              Icons.desktop_windows,
-              size: 80,
-              color: Colors.white,
-            ),
+            const Icon(Icons.desktop_windows, size: 80, color: Colors.white),
             const SizedBox(height: 24),
 
             // Title
@@ -51,10 +47,7 @@ class SmallScreenWarning extends StatelessWidget {
             // Current size
             const Text(
               'Current Window Size',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.white60,
-              ),
+              style: TextStyle(fontSize: 14, color: Colors.white60),
             ),
             const SizedBox(height: 4),
             Text(
@@ -71,10 +64,7 @@ class SmallScreenWarning extends StatelessWidget {
             // Required size (ACTUAL CONFIG)
             const Text(
               'Minimum Required Size',
-              style: TextStyle(
-                fontSize: 14,
-                color: Colors.white60,
-              ),
+              style: TextStyle(fontSize: 14, color: Colors.white60),
             ),
             const SizedBox(height: 4),
             const Text(

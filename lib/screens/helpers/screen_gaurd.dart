@@ -12,7 +12,9 @@ class ScreenSizeGuard extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        if (constraints.maxWidth < 1250 || constraints.maxHeight < 630) {
+        print(constraints.maxWidth);
+        print(constraints.maxHeight);
+        if (constraints.maxWidth < 1300 || constraints.maxHeight < 650) {
           return const SmallScreenWarning();
         }
         return child;

@@ -15,10 +15,7 @@ Future<void> main() async {
   Get.put(WalletController());
 
   runApp(
-    DevicePreview(
-      enabled: false, // Set false in production
-      builder: (context) => const MyApp(),
-    ),
+    const MyApp(),
   );
 }
 

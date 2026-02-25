@@ -90,7 +90,7 @@ class _SplashScreenState extends State<SplashScreen>
                   right: 0,
                   child: Center(
                     child: const Text(
-                      "Version 1.0.5",
+                      "Version 1.0.8",
                       style: TextStyle(
                         color: Colors.white,
                         fontSize: 12,

@@ -5,8 +5,8 @@ Future<bool> showLogoutDialog(BuildContext context) async {
   final result = await showDialog<bool>(
     context: context,
     barrierDismissible: true,
+    barrierColor: Colors.black54,
     builder: (ctx) {
-      // 👈 use ctx
       return Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 500),
@@ -15,13 +15,13 @@ Future<bool> showLogoutDialog(BuildContext context) async {
             child: Container(
               padding: const EdgeInsets.fromLTRB(22, 22, 22, 18),
               decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(0),
+                color: const Color(0xFF1E1E1E), // 🔥 dark surface
+                borderRadius: BorderRadius.circular(8),
                 boxShadow: const [
                   BoxShadow(
-                    color: Color(0x22000000),
-                    blurRadius: 20,
-                    offset: Offset(0, 10),
+                    color: Colors.black54,
+                    blurRadius: 30,
+                    offset: Offset(0, 15),
                   ),
                 ],
               ),
@@ -37,12 +37,12 @@ Future<bool> showLogoutDialog(BuildContext context) async {
                         width: 40,
                         height: 40,
                         decoration: BoxDecoration(
-                          color: const Color(0xFFFFEBEE),
-                          borderRadius: BorderRadius.circular(0),
+                          color: const Color(0xFF2A2A2A),
+                          borderRadius: BorderRadius.circular(8),
                         ),
                         child: const Icon(
                           Icons.logout_rounded,
-                          color: Color(0xFFD32F2F),
+                          color: Color(0xFFE57373),
                           size: 22,
                         ),
                       ),
@@ -53,19 +53,19 @@ Future<bool> showLogoutDialog(BuildContext context) async {
                           style: TextStyle(
                             fontSize: 18,
                             fontWeight: FontWeight.w700,
-                            color: Color(0xFF1C1C1C),
+                            color: Colors.white, // 🔥 white text
                           ),
                         ),
                       ),
                       InkWell(
-                        onTap: () => Navigator.pop(ctx, false), // ✅ FIX
-                        borderRadius: BorderRadius.circular(0),
+                        onTap: () => Navigator.pop(ctx, false),
+                        borderRadius: BorderRadius.circular(8),
                         child: const Padding(
                           padding: EdgeInsets.all(6),
                           child: Icon(
                             Icons.close,
                             size: 18,
-                            color: Color(0xFF6B6B6B),
+                            color: Colors.white70,
                           ),
                         ),
                       ),
@@ -79,7 +79,7 @@ Future<bool> showLogoutDialog(BuildContext context) async {
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.w600,
-                      color: Color(0xFF222222),
+                      color: Colors.white,
                     ),
                   ),
 
@@ -87,11 +87,11 @@ Future<bool> showLogoutDialog(BuildContext context) async {
 
                   const Text(
                     "You’ll be signed out from this device. "
-                    "You can sign back in anytime.",
+                        "You can sign back in anytime.",
                     style: TextStyle(
                       fontSize: 14,
                       height: 1.45,
-                      color: Color(0xFF6B6B6B),
+                      color: Colors.white70,
                     ),
                   ),
 
@@ -99,68 +99,31 @@ Future<bool> showLogoutDialog(BuildContext context) async {
 
                   // ===== Actions =====
                   Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      ModernBtn(
-                        text: "Cancel",
-                        textColor: Colors.black,
-                        bgColor: Colors.white,
-                        width: 200,
-                        height: 40,
-                        onTap: () {
-                          Navigator.pop(ctx, false);
-                        },
+                      Expanded(
+                        child: ModernBtn(
+                          text: "Cancel",
+                          textColor: Colors.white,
+                          bgColor: const Color(0xFF2A2A2A),
+                          width: 200,
+                          height: 40,
+                          onTap: () {
+                            Navigator.pop(ctx, false);
+                          },
+                        ),
                       ),
-                      // Expanded(
-                      //   child: OutlinedButton(
-                      //     onPressed: () => Navigator.pop(ctx, false), // ✅ FIX
-                      //     style: OutlinedButton.styleFrom(
-                      //       padding: const EdgeInsets.symmetric(vertical: 12),
-                      //       side: const BorderSide(color: Color(0xFFE0E0E0)),
-                      //       shape: RoundedRectangleBorder(
-                      //         borderRadius: BorderRadius.circular(0),
-                      //       ),
-                      //     ),
-                      //     child: const Text(
-                      //       "Cancel",
-                      //       style: TextStyle(
-                      //         fontWeight: FontWeight.w600,
-                      //         color: Color(0xFF1C1C1C),
-                      //       ),
-                      //     ),
-                      //   ),
-                      // ),
                       const SizedBox(width: 12),
-                      ModernBtn(
-                        text: "Logout",
-                        bgColor: const Color(0xFFD32F2F),
-                        width: 200,
-                        height: 40,
-                        onTap: () {
-                          Navigator.pop(ctx, true);
-                        },
+                      Expanded(
+                        child: ModernBtn(
+                          text: "Logout",
+                          bgColor: const Color(0xFFD32F2F),
+                          width: 200,
+                          height: 40,
+                          onTap: () {
+                            Navigator.pop(ctx, true);
+                          },
+                        ),
                       ),
-                      // Expanded(
-                      //   child: ElevatedButton(
-                      //     onPressed: () => Navigator.pop(ctx, true), // ✅ FIX
-                      //     style: ElevatedButton.styleFrom(
-                      //       backgroundColor: const Color(0xFFD32F2F),
-                      //       foregroundColor: Colors.white,
-                      //       padding: const EdgeInsets.symmetric(vertical: 12),
-                      //       elevation: 1,
-                      //       shape: RoundedRectangleBorder(
-                      //         borderRadius: BorderRadius.circular(0),
-                      //       ),
-                      //     ),
-                      //     child: const Text(
-                      //       "Log out",
-                      //       style: TextStyle(
-                      //         fontWeight: FontWeight.w700,
-                      //         letterSpacing: 0.2,
-                      //       ),
-                      //     ),
-                      //   ),
-                      // ),
                     ],
                   ),
                 ],

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -31,6 +32,11 @@ import 'package:flutter/material.dart';
 
 class BettingGridModel {
   TextEditingController barcodeController = TextEditingController();
+  final TextEditingController barcodeCtrl = TextEditingController();
+  final FocusNode barcodeFocus = FocusNode();
+
+  Timer? _debounce;
+  bool _isProcessing = false;
   final IndexController indexController = Get.put(IndexController());
 
   static const double cellW = 78;
@@ -720,7 +726,7 @@ class BettingGridModel {
   // ─── Clear ─────────────────────────────────────────────────────────────────
 
   Future<void> clear(List slots, {bool isRefreshing = false}) async {
-    slots = [];
+    slots.clear();
     focusSeries(0);
     selectedRange = 0;
     debugPrint("========== CLEAR START ==========");
@@ -880,47 +886,44 @@ class BettingGridController {
 
     for (final entry in selections.entries) {
       final int number = entry.key;
-      final int qty = entry.value;
+      int qty = entry.value;
 
       if (qty <= 0) continue;
 
-      double costPerCell;
-
-      // Normalize to 4 digit (0000–9999)
       final int safeNumber = number % 10000;
 
       if (model.high) {
-        // =========================
-        // 🔵 HIGH MODE
-        // Row = Thousands digit
-        // =========================
+        // ✅ Hundreds digit (0–9)
+        final int index = (safeNumber ~/ 100) % 10;
 
-        final int rowIndex = (safeNumber ~/ 100) % 10;
-        if (row != null && rowIndex != row) continue;
+        if (row != null && index != row) continue;
 
-        costPerCell = 2.0 * multipliers[rowIndex];
+        if (index < 0 || index >= multipliers.length) continue;
+
+        final int multiplier = multipliers[index];
+
+        // 🔥 Multiply QTY first
+        final int finalQty = qty * multiplier;
+
+        totalQty += finalQty;
+
+        // Base cost in HIGH mode is always 2
+        totalAmount += finalQty * 2.0;
       } else {
-        // =========================
-        // 🟢 LOW MODE
-        // Series based (also thousands digit)
-        // =========================
-
         final int seriesIndex = safeNumber ~/ 1000;
 
         if (row != null && seriesIndex != row) continue;
 
-        costPerCell = model.selectedPoint;
+        totalQty += qty;
+        totalAmount += qty * model.selectedPoint;
       }
-
-      totalQty += qty;
-      totalAmount += qty * costPerCell;
     }
 
     return {
       'qty': totalQty,
       'amount': double.parse(totalAmount.toStringAsFixed(2)),
     };
-  } // TOKEN
+  }
 
   // =====================================================
   Future<String> _getToken() async {
@@ -1044,39 +1047,31 @@ class BettingGridController {
       sloatValue = slot!;
     }
 
-    // ================= MULTIPLIERS =================
+    // ================= MULTIPLIERS (HIGH MODE) =================
     final List<int> multipliers = [1, 1, 2, 3, 5, 5, 10, 20, 25, 25];
 
-    print(sloatValue);
-    // ================= POINT MAP =================
-    if (point > 0) {
-      for (int series = 0; series < 10; series++) {
-        for (int range = 0; range < model.ranges.length; range++) {
-          allDatas123['c${series}_s${range}_point'] = point;
-        }
-      }
-    }
-
-    // ================= BET DATA =================
+    // ================= BUILD BET DATA =================
     for (int series = 0; series < 10; series++) {
       for (int range = 0; range < model.ranges.length; range++) {
         final int base = series * 1000 + range * 100;
+
+        bool hasBetInThisCell = false;
 
         for (int row = 0; row < 10; row++) {
           for (int col = 0; col < 10; col++) {
             final int number = row * 10 + col;
 
-            final int qty =
-                int.tryParse(
-                  model._getCtrl(series, range, base + number).text,
-                ) ??
-                0;
+            final controller = model._getCtrl(series, range, base + number);
+
+            final int qty = int.tryParse(controller.text.trim()) ?? 0;
 
             if (qty <= 0) continue;
 
+            hasBetInThisCell = true;
+
             int multiplier = 1;
 
-            // ✅ HIGH mode multiplier
+            // 🔵 HIGH MODE
             if (model.high) {
               multiplier = multipliers[range];
             }
@@ -1085,6 +1080,11 @@ class BettingGridController {
 
             allDatas2['c${series}_s${range}_$number'] = totalAmount;
           }
+        }
+
+        // ================= POINT MAP =================
+        if (hasBetInThisCell && point > 0) {
+          allDatas123['c${series}_s${range}_point'] = point;
         }
       }
     }
@@ -1099,7 +1099,409 @@ class BettingGridController {
     };
   }
 
-  Future<void> handlePrint(
+  /// 23_02_2026 10:30 pm
+  /// uncomment if needed
+  // Map<String, dynamic> buildPlaceBidPayload({
+  //   String? slot,
+  //   List<TimeOfDay>? advancedSlots,
+  // }) {
+  //   final Map<String, int> allDatas2 = {};
+  //   final Map<String, int> allDatas123 = {};
+  //
+  //   final int point = model.selectedPoint.toInt();
+  //   final bool isAdvanced = advancedSlots != null && advancedSlots.isNotEmpty;
+  //
+  //   if (!isAdvanced && (slot == null || slot.isEmpty)) {
+  //     throw Exception("Slot is required for normal bet");
+  //   }
+  //
+  //   // ================= FORMAT TIME =================
+  //   String formatTime(TimeOfDay time) {
+  //     final h = time.hour.toString().padLeft(2, '0');
+  //     final m = time.minute.toString().padLeft(2, '0');
+  //     return '$h:$m';
+  //   }
+  //
+  //   // ================= BUILD SLOT =================
+  //   String sloatValue;
+  //
+  //   if (isAdvanced) {
+  //     final Map<String, String> slotMap = {
+  //       for (int i = 0; i < advancedSlots.length; i++)
+  //         i.toString(): formatTime(advancedSlots[i]),
+  //     };
+  //     sloatValue = jsonEncode(slotMap);
+  //   } else {
+  //     sloatValue = slot!;
+  //   }
+  //
+  //   // ================= MULTIPLIERS =================
+  //   final List<int> multipliers = [1, 1, 2, 3, 5, 5, 10, 20, 25, 25];
+  //
+  //   print(sloatValue);
+  //   // ================= POINT MAP =================
+  //   if (point > 0) {
+  //     for (int series = 0; series < 10; series++) {
+  //       for (int range = 0; range < model.ranges.length; range++) {
+  //         allDatas123['c${series}_s${range}_point'] = point;
+  //         /// allDatas123 fix this  model
+  //         //                       ._getCtrl(series, range, base + number)
+  //         //                       .text,use this logic proper code all code
+  //       }
+  //     }
+  //   }
+  //
+  //   // ================= BET DATA =================
+  //   for (int series = 0; series < 10; series++) {
+  //     for (int range = 0; range < model.ranges.length; range++) {
+  //       final int base = series * 1000 + range * 100;
+  //
+  //       for (int row = 0; row < 10; row++) {
+  //         for (int col = 0; col < 10; col++) {
+  //           final int number = row * 10 + col;
+  //
+  //           final int qty =
+  //               int.tryParse(
+  //                 model
+  //                     ._getCtrl(series, range, base + number)
+  //                     .text,
+  //               ) ??
+  //               0;
+  //
+  //           if (qty <= 0) continue;
+  //
+  //           int multiplier = 1;
+  //
+  //           // ✅ HIGH mode multiplier
+  //           // if (model.high) {
+  //           //   multiplier = multipliers[range];
+  //           // }
+  //
+  //           final int totalAmount = qty * point * multiplier;
+  //
+  //           allDatas2['c${series}_s${range}_$number'] = totalAmount;
+  //         }
+  //       }
+  //     }
+  //   }
+  //
+  //   // ================= FINAL PAYLOAD =================
+  //   return {
+  //     'sloat': sloatValue,
+  //     'a1': point.toString(),
+  //     'advance_bet': isAdvanced ? "1" : "0",
+  //     'all_datas2': jsonEncode(allDatas2),
+  //     'all_datas123': jsonEncode(allDatas123),
+  //   };
+  // }
+
+  // Future<void> handlePrint(
+  //   BuildContext context,
+  //   String slot,
+  //   List<TimeOfDay> slots,
+  //   String userId,
+  // ) async {
+  //   final now = DateTime.now();
+  //
+  //   print(now);
+  //
+  //   DateTime parseSlotTime(String slot) {
+  //     final parts = slot.trim().split(' ');
+  //     final timePart = parts[0];
+  //     final period = parts[1].toUpperCase();
+  //
+  //     final timeSplit = timePart.split(':');
+  //     int hour = int.parse(timeSplit[0]);
+  //     final int minute = int.parse(timeSplit[1]);
+  //
+  //     if (period == "PM" && hour != 12) {
+  //       hour += 12;
+  //     } else if (period == "AM" && hour == 12) {
+  //       hour = 0;
+  //     }
+  //
+  //     return DateTime(now.year, now.month, now.day, hour, minute);
+  //   }
+  //
+  //   // ================= VALIDATION =================
+  //
+  //   final DateTime gameStart = DateTime(now.year, now.month, now.day, 9, 45);
+  //
+  //   final DateTime gameEnd = DateTime(now.year, now.month, now.day, 21, 30);
+  //
+  //   // ✅ If advanced slots selected → validate each slot
+  //   if (slots.isNotEmpty) {
+  //     for (final time in slots) {
+  //       final slotTime = DateTime(
+  //         now.year,
+  //         now.month,
+  //         now.day,
+  //         time.hour,
+  //         time.minute,
+  //       );
+  //
+  //       if (slotTime.isBefore(gameStart)) {
+  //         showInfoDialog(
+  //           context: context,
+  //           title: "Game Not Started",
+  //           subtitle: "One or more selected slots are before 09:45 AM.",
+  //         );
+  //         return;
+  //       }
+  //
+  //       if (slotTime.isAfter(gameEnd)) {
+  //         showInfoDialog(
+  //           context: context,
+  //           title: "Game Closed",
+  //           subtitle: "One or more selected slots are after 09:30 PM.",
+  //         );
+  //         return;
+  //       }
+  //     }
+  //   }
+  //   // ✅ Single slot validation
+  //   else {
+  //     final DateTime slotTime = parseSlotTime(slot);
+  //
+  //     if (slotTime.isBefore(gameStart)) {
+  //       showInfoDialog(
+  //         context: context,
+  //         title: "Game Not Started",
+  //         subtitle: "Game Not Started. Please Wait till 9:45",
+  //       );
+  //       return;
+  //     }
+  //
+  //     if (slotTime.isAfter(gameEnd)) {
+  //       showInfoDialog(
+  //         context: context,
+  //         title: "Game Closed",
+  //         subtitle: " Game Time Over. Please Come Back Tomorrow",
+  //       );
+  //       return;
+  //     }
+  //   }
+  //
+  //   // ================= EARLY VALIDATION =================
+  //
+  //   if (slot.isEmpty && slots.isEmpty) {
+  //     showInfoDialog(
+  //       context: context,
+  //       title: "Information",
+  //       subtitle: "Please select a draw time slot.",
+  //     );
+  //     return;
+  //   }
+  //
+  //   final payload = buildPlaceBidPayload(
+  //     slot: slots.isEmpty ? slot : null,
+  //     advancedSlots: slots.isNotEmpty ? slots : null,
+  //   );
+  //
+  //   print(payload);
+  //
+  //   final Map<String, dynamic> decoded = Map<String, dynamic>.from(
+  //     jsonDecode(payload["all_datas2"]),
+  //   );
+  //
+  //   final bool hasAnyValue = decoded.values.any(
+  //     (v) => int.tryParse(v.toString()) != null && int.parse(v.toString()) > 0,
+  //   );
+  //
+  //   if (!hasAnyValue) {
+  //     showInfoDialog(
+  //       context: context,
+  //       title: "Information",
+  //       subtitle: "Enter quantity for at least one number to continue.",
+  //     );
+  //     return;
+  //   }
+  //
+  //   try {
+  //     final token = await _getToken();
+  //
+  //     final request = http.MultipartRequest(
+  //       'POST',
+  //       Uri.parse('${ApiConstants.baseUrl}/place-bid'),
+  //     );
+  //
+  //     request.headers['Authorization'] = 'Bearer $token';
+  //
+  //     payload.forEach((key, value) {
+  //       request.fields[key] = value.toString();
+  //     });
+  //
+  //     final streamedResponse = await request.send();
+  //     final response = await http.Response.fromStream(streamedResponse);
+  //
+  //     if (response.statusCode != 200) {
+  //       if (!context.mounted) return;
+  //       ScaffoldMessenger.of(context).showSnackBar(
+  //         const SnackBar(
+  //           content: Text("Server error. Please try again."),
+  //           backgroundColor: Color(0xFFC0392B),
+  //         ),
+  //       );
+  //       return;
+  //     }
+  //
+  //     final apiJson = jsonDecode(response.body);
+  //
+  //     if (apiJson['status'] != true) {
+  //       if (!context.mounted) return;
+  //       showInfoDialog(
+  //         context: context,
+  //         title: "Information",
+  //         subtitle: apiJson['message'] ?? "Something went wrong",
+  //       );
+  //       return;
+  //     }
+  //
+  //     final data = apiJson['data'];
+  //
+  //     List<String> ticketIds = [];
+  //     if (data['parent_all'] is List &&
+  //         (data['parent_all'] as List).isNotEmpty) {
+  //       ticketIds = (data['parent_all'] as List)
+  //           .map((e) => e.toString())
+  //           .toList();
+  //     }
+  //
+  //     List<String> ticketTimes = [];
+  //     final walate2 = data['walate2'];
+  //
+  //     if (walate2 != null) {
+  //       try {
+  //         if (walate2.toString().startsWith('{')) {
+  //           final decodedWalate = jsonDecode(walate2);
+  //           ticketTimes = decodedWalate.values
+  //               .map<String>((e) => e.toString())
+  //               .toList();
+  //         } else {
+  //           ticketTimes = [walate2.toString()];
+  //         }
+  //       } catch (_) {
+  //         ticketTimes = [walate2.toString()];
+  //       }
+  //     }
+  //
+  //     if (ticketTimes.isEmpty) {
+  //       final fallbackTime =
+  //           '${now.hour.toString().padLeft(2, '0')}:'
+  //           '${now.minute.toString().padLeft(2, '0')}';
+  //
+  //       ticketTimes = List.filled(
+  //         ticketIds.isNotEmpty ? ticketIds.length : 1,
+  //         fallbackTime,
+  //       );
+  //     }
+  //
+  //     final Map<String, int> selections = {};
+  //     int totalQty = 0;
+  //     int totalAmount = 0;
+  //
+  //     final int point = model.selectedPoint.toInt();
+  //     const List<int> multipliers = [1, 1, 2, 3, 5, 5, 10, 20, 25, 25];
+  //
+  //     decoded.forEach((key, value) {
+  //       final parts = key.split('_');
+  //
+  //       final int series = int.parse(parts[0].substring(1));
+  //       final int range = int.parse(parts[1].substring(1));
+  //       final int number = int.parse(parts[2]);
+  //
+  //       final String fullNumber = (series * 1000 + range * 100 + number)
+  //           .toString()
+  //           .padLeft(4, "0");
+  //
+  //       final int amount = int.parse(value.toString());
+  //
+  //       int qty = 0;
+  //
+  //       if (model.high) {
+  //         if (range >= 0 && range < multipliers.length) {
+  //           final int costPerCell =
+  //               2 * multipliers[range]; // proper range from 0 to 9
+  //           qty = amount ~/ costPerCell;
+  //         }
+  //       } else {
+  //         qty = amount ~/ point;
+  //       }
+  //
+  //       if (qty > 0) {
+  //         int finalQty = qty;
+  //
+  //         if (model.high) {
+  //           // Extract hundreds digit (0–9)
+  //           final int index = int.parse(fullNumber[1]);
+  //
+  //           if (index >= 0 && index < multipliers.length) {
+  //             finalQty = qty * multipliers[index];
+  //           }
+  //         }
+  //
+  //         selections[fullNumber] = finalQty;
+  //
+  //         totalQty += finalQty;
+  //         totalAmount +=
+  //             amount; // keep original amount (do not change backend value)
+  //       }
+  //     });
+  //
+  //     if (selections.isEmpty) {
+  //       if (!context.mounted) return;
+  //       ScaffoldMessenger.of(
+  //         context,
+  //       ).showSnackBar(const SnackBar(content: Text("No numbers selected")));
+  //       return;
+  //     }
+  //
+  //     List<int> ticketAmounts;
+  //
+  //     if (ticketIds.isNotEmpty) {
+  //       ticketAmounts = List.generate(ticketIds.length, (_) => totalAmount);
+  //     } else {
+  //       ticketAmounts = [totalAmount];
+  //     }
+  //
+  //     debugPrint("════════════ PRINT DEBUG ════════════");
+  //     debugPrint("Selections → $selections");
+  //     debugPrint("Total Qty → $totalQty");
+  //     debugPrint("Total Amount → $totalAmount");
+  //     debugPrint("Ticket IDs → $ticketIds");
+  //     debugPrint("══════════════════════════════════════");
+  //
+  //     await TicketPrintService.printTicket(
+  //       context: context,
+  //       selections: selections,
+  //       ticketIds: ticketIds,
+  //       ticketTimes: ticketTimes,
+  //       date:
+  //           '${now.day.toString().padLeft(2, '0')}-'
+  //           '${now.month.toString().padLeft(2, '0')}-'
+  //           '${now.year}',
+  //       totalQty: totalQty,
+  //       ticketsAmounts: ticketAmounts,
+  //       userId: userId,
+  //     );
+  //
+  //     model.clearAllControllers();
+  //     model.clear(slots, isRefreshing: true);
+  //   } catch (e, s) {
+  //     debugPrint("HandlePrint Error: $e\n$s");
+  //
+  //     if (!context.mounted) return;
+  //
+  //     ScaffoldMessenger.of(context).showSnackBar(
+  //       const SnackBar(
+  //         content: Text("Something went wrong. Please try again."),
+  //         backgroundColor: Color(0xFFC0392B),
+  //       ),
+  //     );
+  //   }
+  // }
+
+  Future<Map<String, dynamic>> handlePrint(
     BuildContext context,
     String slot,
     List<TimeOfDay> slots,
@@ -1107,21 +1509,120 @@ class BettingGridController {
   ) async {
     final now = DateTime.now();
 
-    // ================= EARLY VALIDATION =================
+    // ================= SLOT VALIDATION FIRST =================
 
     if (slot.isEmpty && slots.isEmpty) {
-      showInfoDialog(
-        context: context,
-        title: "Information",
-        subtitle: "Please select a draw time slot.",
-      );
-      return;
+      return {"success": false, "failedAt": "slot_missing"};
     }
+
+    DateTime parseSlotTime(String slot) {
+      final parts = slot.trim().split(' ');
+      final timePart = parts[0];
+      final period = parts.length > 1 ? parts[1].toUpperCase() : "";
+
+      final timeSplit = timePart.split(':');
+      int hour = int.parse(timeSplit[0]);
+      final int minute = int.parse(timeSplit[1]);
+
+      if (period == "PM" && hour != 12) hour += 12;
+      if (period == "AM" && hour == 12) hour = 0;
+
+      return DateTime(now.year, now.month, now.day, hour, minute);
+    }
+
+    final DateTime gameStart = DateTime(now.year, now.month, now.day, 9, 45);
+
+    final DateTime gameEnd = DateTime(now.year, now.month, now.day, 21, 30);
+
+    // ================= SLOT VALIDATION WITH DEBUG =================
+
+    debugPrint("════════ SLOT VALIDATION START ════════");
+    debugPrint("Now        → $now");
+    debugPrint("Game Start → $gameStart");
+    debugPrint("Game End   → $gameEnd");
+    debugPrint("Slots List → $slots");
+    debugPrint("Single Slot→ $slot");
+
+    if (slots.isNotEmpty) {
+      debugPrint("Mode → ADVANCED SLOTS");
+
+      for (final time in slots) {
+        final slotTime = DateTime(
+          now.year,
+          now.month,
+          now.day,
+          time.hour,
+          time.minute,
+        );
+
+        debugPrint("Checking Slot → $slotTime");
+
+        if (slotTime.isBefore(gameStart)) {
+          debugPrint("❌ FAILED → Slot before game start");
+          debugPrint("════════ SLOT VALIDATION END ════════");
+          return {
+            "success": false,
+            "failedAt": "game_not_started",
+            "slotTime": slotTime.toString(),
+          };
+        }
+
+        if (slotTime.isAfter(gameEnd)) {
+          debugPrint("❌ FAILED → Slot after game end");
+          debugPrint("════════ SLOT VALIDATION END ════════");
+          return {
+            "success": false,
+            "failedAt": "game_closed",
+            "slotTime": slotTime.toString(),
+          };
+        }
+
+        debugPrint("✅ Slot OK → $slotTime");
+      }
+
+      debugPrint("✅ All Advanced Slots Valid");
+    } else {
+      debugPrint("Mode → SINGLE SLOT");
+
+      final slotTime = parseSlotTime(slot);
+
+      debugPrint("Parsed Slot → $slotTime");
+
+      if (slotTime.isBefore(gameStart)) {
+        debugPrint("❌ FAILED → Slot before game start");
+        debugPrint("════════ SLOT VALIDATION END ════════");
+        return {
+          "success": false,
+          "failedAt": "game_not_started",
+          "slotTime": slotTime.toString(),
+        };
+      }
+
+      if (slotTime.isAfter(gameEnd)) {
+        debugPrint("❌ FAILED → Slot after game end");
+        debugPrint("════════ SLOT VALIDATION END ════════");
+        return {
+          "success": false,
+          "failedAt": "game_closed",
+          "slotTime": slotTime.toString(),
+        };
+      }
+
+      debugPrint("✅ Single Slot OK → $slotTime");
+    }
+
+    debugPrint("════════ SLOT VALIDATION PASSED ════════");
+
+    // ================= PAYLOAD BUILD =================
 
     final payload = buildPlaceBidPayload(
       slot: slots.isEmpty ? slot : null,
       advancedSlots: slots.isNotEmpty ? slots : null,
     );
+
+    if (!payload.containsKey("all_datas2")) {
+      return {"success": false, "failedAt": "invalid_payload"};
+    }
 
     final Map<String, dynamic> decoded = Map<String, dynamic>.from(
       jsonDecode(payload["all_datas2"]),
@@ -1132,13 +1633,45 @@ class BettingGridController {
     );
 
     if (!hasAnyValue) {
-      showInfoDialog(
-        context: context,
-        title: "Information",
-        subtitle: "Enter quantity for at least one number to continue.",
-      );
-      return;
+      return {"success": false, "failedAt": "empty_selection"};
     }
+
+    // ================= LOADING DIALOG =================
+
+    Get.dialog(
+      Dialog(
+        backgroundColor: Colors.transparent,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 26),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1F1F1F),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: const Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 36,
+                height: 36,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2.8,
+                  color: Colors.white,
+                ),
+              ),
+              SizedBox(height: 18),
+              Text(
+                "Printing ticket...",
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      barrierDismissible: false,
+    );
 
     try {
       final token = await _getToken();
@@ -1157,27 +1690,21 @@ class BettingGridController {
       final streamedResponse = await request.send();
       final response = await http.Response.fromStream(streamedResponse);
 
+      print(response.body);
       if (response.statusCode != 200) {
-        if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Server error. Please try again."),
-            backgroundColor: Color(0xFFC0392B),
-          ),
-        );
-        return;
+        Get.back();
+        return {"success": false, "failedAt": "server_error"};
       }
 
       final apiJson = jsonDecode(response.body);
 
       if (apiJson['status'] != true) {
-        if (!context.mounted) return;
-        showInfoDialog(
-          context: context,
-          title: "Information",
-          subtitle: apiJson['message'] ?? "Something went wrong",
-        );
-        return;
+        Get.back();
+        return {
+          "success": false,
+          "failedAt": "api_rejected",
+          "message": apiJson["message"],
+        };
       }
 
       final data = apiJson['data'];
@@ -1185,8 +1712,7 @@ class BettingGridController {
       // ================= TICKET IDS =================
 
       List<String> ticketIds = [];
-      if (data['parent_all'] is List &&
-          (data['parent_all'] as List).isNotEmpty) {
+      if (data['parent_all'] is List) {
         ticketIds = (data['parent_all'] as List)
             .map((e) => e.toString())
             .toList();
@@ -1195,20 +1721,19 @@ class BettingGridController {
       // ================= TICKET TIMES =================
 
       List<String> ticketTimes = [];
-      final walate2 = data['walate2'];
 
-      if (walate2 != null) {
+      if (data['walate2'] != null) {
         try {
-          if (walate2.toString().startsWith('{')) {
-            final decodedWalate = jsonDecode(walate2);
+          if (data['walate2'].toString().startsWith('{')) {
+            final decodedWalate = jsonDecode(data['walate2']);
             ticketTimes = decodedWalate.values
                 .map<String>((e) => e.toString())
                 .toList();
           } else {
-            ticketTimes = [walate2.toString()];
+            ticketTimes = [data['walate2'].toString()];
           }
         } catch (_) {
-          ticketTimes = [walate2.toString()];
+          ticketTimes = [data['walate2'].toString()];
         }
       }
 
@@ -1223,13 +1748,14 @@ class BettingGridController {
         );
       }
 
-      // ================= SELECTION BUILD =================
+      // ================= BUILD SELECTIONS =================
 
       final Map<String, int> selections = {};
       int totalQty = 0;
       int totalAmount = 0;
 
       final int point = model.selectedPoint.toInt();
+
       const List<int> multipliers = [1, 1, 2, 3, 5, 5, 10, 20, 25, 25];
 
       decoded.forEach((key, value) {
@@ -1257,73 +1783,62 @@ class BettingGridController {
         }
 
         if (qty > 0) {
-          selections[fullNumber] = qty; // ✅ NO slot multiplier
-          totalQty += qty;
+          int finalQty = qty;
+
+          if (model.high) {
+            final int index = int.parse(fullNumber[1]);
+            if (index >= 0 && index < multipliers.length) {
+              finalQty = qty * multipliers[index];
+            }
+          }
+
+          selections[fullNumber] = finalQty;
+
+          totalQty += finalQty;
           totalAmount += amount;
         }
       });
 
       if (selections.isEmpty) {
-        if (!context.mounted) return;
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text("No numbers selected")));
-        return;
+        Get.back();
+        return {"success": false, "failedAt": "no_selection"};
       }
 
-      // ================= MULTI SLOT HANDLING =================
-      // Backend already creates multiple tickets for multiple slots.
-      // So we DO NOT multiply qty or amount.
-      // Each ticket prints same selections.
+      final List<int> ticketAmounts = ticketIds.isNotEmpty
+          ? List.generate(ticketIds.length, (_) => totalAmount)
+          : [totalAmount];
 
-      List<int> ticketAmounts;
+      // ================= PRINT ONE BY ONE (ADVANCED SAFE) =================
 
-      if (ticketIds.isNotEmpty) {
-        ticketAmounts = List.generate(ticketIds.length, (_) => totalAmount);
-      } else {
-        ticketAmounts = [totalAmount];
+      for (int i = 0; i < ticketIds.length; i++) {
+        await TicketPrintService.printTicket(
+          context: context,
+          selections: selections,
+          ticketIds: [ticketIds[i]],
+          ticketTimes: [
+            i < ticketTimes.length ? ticketTimes[i] : ticketTimes.first,
+          ],
+          date:
+              '${now.day.toString().padLeft(2, '0')}-'
+              '${now.month.toString().padLeft(2, '0')}-'
+              '${now.year}',
+          totalQty: totalQty,
+          ticketsAmounts: [ticketAmounts[i]],
+          userId: userId,
+        );
       }
-
-      // ================= DEBUG =================
-
-      debugPrint("════════════ PRINT DEBUG ════════════");
-      debugPrint("Selections → $selections");
-      debugPrint("Total Qty → $totalQty");
-      debugPrint("Total Amount → $totalAmount");
-      debugPrint("Ticket IDs → $ticketIds");
-      debugPrint("══════════════════════════════════════");
-
-      // ================= PRINT =================
-
-      await TicketPrintService.printTicket(
-        context: context,
-        selections: selections,
-        ticketIds: ticketIds,
-        ticketTimes: ticketTimes,
-        date:
-            '${now.day.toString().padLeft(2, '0')}-'
-            '${now.month.toString().padLeft(2, '0')}-'
-            '${now.year}',
-        totalQty: totalQty,
-        ticketsAmounts: ticketAmounts,
-        userId: userId,
-      );
-
-      // ================= CLEAR =================
 
       model.clearAllControllers();
       model.clear(slots, isRefreshing: true);
+
+      Get.back();
+
+      return {"success": true};
     } catch (e) {
-      debugPrint("HandlePrint Error: $e");
-
-      if (!context.mounted) return;
-
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text("Something went wrong. Please try again."),
-          backgroundColor: Color(0xFFC0392B),
-        ),
-      );
+      if (Get.isDialogOpen ?? false) {
+        Get.back();
+      }
+      return {"success": false, "failedAt": "exception"};
     }
   }
 
@@ -1456,18 +1971,118 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
 
     if (e.logicalKey == LogicalKeyboardKey.f6) {
       debugPrint("F6 Pressed → Print Ticket");
-      controller.handlePrint(context, widget.slot, slots, widget.id);
-    } else if (e.logicalKey == LogicalKeyboardKey.f7) {
+
+      _handlePrintFromKey(); // 🔥 call async method separately
+      return true;
+    }
+
+    if (e.logicalKey == LogicalKeyboardKey.f7) {
       debugPrint("F7 Pressed → Clear");
       controller.model.clear(slots);
-      // _clearForm();
-    } else if (e.logicalKey == LogicalKeyboardKey.f5) {
+      return true;
+    }
+
+    if (e.logicalKey == LogicalKeyboardKey.f5) {
       debugPrint("F5 Pressed → Refresh & Clear");
       controller.model.clear(slots, isRefreshing: true);
       refreshController.refreshingData();
-      // _clearForm();
+      return true;
     }
+
     return false;
+  }
+
+  Future<void> _handlePrintFromKey() async {
+    final result = await controller.handlePrint(
+      context,
+      widget.slot,
+      slots,
+      widget.id,
+    );
+
+    if (result["success"] == true) {
+      showInfoDialog(
+        context: context,
+        title: "Success",
+        subtitle: "Ticket printed successfully.",
+      );
+      return;
+    }
+
+    final failedAt = result["failedAt"];
+
+    switch (failedAt) {
+      case "game_not_started":
+        showInfoDialog(
+          context: context,
+          title: "Game Not Started",
+          subtitle: "Game will start at 09:45 AM. Please wait.",
+        );
+        break;
+
+      case "game_closed":
+        showInfoDialog(
+          context: context,
+          title: "Game Closed",
+          subtitle: "Today's game time is over. Please come tomorrow.",
+        );
+        break;
+
+      case "slot_missing":
+        showInfoDialog(
+          context: context,
+          title: "Slot Required",
+          subtitle: "Please select a draw time slot.",
+        );
+        break;
+
+      case "empty_selection":
+        showInfoDialog(
+          context: context,
+          title: "No Quantity",
+          subtitle: "Enter quantity for at least one number.",
+        );
+        break;
+
+      case "no_selection":
+        showInfoDialog(
+          context: context,
+          title: "No Numbers",
+          subtitle: "No valid numbers selected.",
+        );
+        break;
+
+      case "server_error":
+        showInfoDialog(
+          context: context,
+          title: "Server Error",
+          subtitle: "Server error occurred. Please try again.",
+        );
+        break;
+
+      case "api_rejected":
+        showInfoDialog(
+          context: context,
+          title: "Request Failed",
+          subtitle: result["message"],
+        );
+        break;
+
+      case "exception":
+        showInfoDialog(
+          context: context,
+          title: "Unexpected Error",
+          subtitle: "Something went wrong. Please try again.",
+        );
+        break;
+
+      default:
+        showInfoDialog(
+          context: context,
+          title: "Error",
+          subtitle: "Unknown error occurred.",
+        );
+    }
   }
 
   @override
@@ -3039,7 +3654,7 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
             "assets/banner_image_1.png",
             fit: BoxFit.fill,
             height: 85,
-            width: 950,
+            width: 900,
           ),
           Row(
             mainAxisAlignment: MainAxisAlignment.end,
@@ -3051,11 +3666,11 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
                 'Total Amount',
                 '₹${totalAmount.toStringAsFixed(0)}',
               ),
-              // SizedBox(width: 2),
-              // _summaryItem(
-              //   slots.isEmpty ? 'Slot' : 'Slots',
-              //   slots.isEmpty ? 'Current' : '${slots.length}',
-              // ),
+              SizedBox(width: 2),
+              _summaryItem(
+                slots.isEmpty ? 'Slot' : 'Slots',
+                slots.isEmpty ? 'Current' : '${slots.length}',
+              ),
             ],
           ),
         ],
@@ -3184,7 +3799,7 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
         ),
         const SizedBox(height: 6),
         Container(
-          width: 200,
+          width: 150,
           // slightly wider for better alignment
           height: 34,
           alignment: Alignment.center,
@@ -3211,6 +3826,8 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
 
     final model = controller.model;
     final barcodeCtrl = model.barcodeController;
+    final barcodeFocus = model.barcodeFocus;
+    var debounce = model._debounce;
 
     return SizedBox(
       height: btnHeight,
@@ -3223,9 +3840,100 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
             bgColor: const Color(0xFF311B92),
             width: btnWidth,
             height: btnHeight,
-            onTap: () {
+            onTap: () async {
               print("Ticket Print");
-              controller.handlePrint(context, widget.slot, slots, widget.id);
+
+              final result = await controller.handlePrint(
+                context,
+                widget.slot,
+                slots,
+                widget.id,
+              );
+
+              if (result["success"] == true) {
+                showInfoDialog(
+                  context: context,
+                  title: "Success",
+                  subtitle: "Ticket printed successfully.",
+                );
+                return;
+              }
+
+              final failedAt = result["failedAt"];
+
+              switch (failedAt) {
+                case "game_not_started":
+                  showInfoDialog(
+                    context: context,
+                    title: "Game Not Started",
+                    subtitle: "Game will start at 09:45 AM. Please wait.",
+                  );
+                  break;
+
+                case "game_closed":
+                  showInfoDialog(
+                    context: context,
+                    title: "Game Closed",
+                    subtitle:
+                        "Today's game time is over. Please come tomorrow.",
+                  );
+                  break;
+
+                case "slot_missing":
+                  showInfoDialog(
+                    context: context,
+                    title: "Slot Required",
+                    subtitle: "Please select a draw time slot.",
+                  );
+                  break;
+
+                case "empty_selection":
+                  showInfoDialog(
+                    context: context,
+                    title: "No Quantity",
+                    subtitle: "Enter quantity for at least one number.",
+                  );
+                  break;
+
+                case "no_selection":
+                  showInfoDialog(
+                    context: context,
+                    title: "No Numbers",
+                    subtitle: "No valid numbers selected.",
+                  );
+                  break;
+
+                case "server_error":
+                  showInfoDialog(
+                    context: context,
+                    title: "Server Error",
+                    subtitle: "Server error occurred. Please try again.",
+                  );
+                  break;
+
+                case "api_rejected":
+                  showInfoDialog(
+                    context: context,
+                    title: "Request Failed",
+                    subtitle: result["message"],
+                  );
+                  break;
+
+                case "exception":
+                  showInfoDialog(
+                    context: context,
+                    title: "Unexpected Error",
+                    subtitle: "Something went wrong. Please try again.",
+                  );
+                  break;
+
+                default:
+                  showInfoDialog(
+                    context: context,
+                    title: "Error",
+                    subtitle: "Unknown error occurred.",
+                  );
+              }
             },
           ),
 
@@ -3240,22 +3948,22 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
             onTap: _isClearing
                 ? () {}
                 : () async {
-              setState(() => _isClearing = true);
+                    setState(() => _isClearing = true);
 
-              try {
-                setState(() {
-                  slots = [];
-                  model.clear(slots);
-                  barcodeCtrl.clear();
-                });
-              } catch (e) {
-                debugPrint("Clear Error: $e");
-              } finally {
-                if (mounted) {
-                  setState(() => _isClearing = false);
-                }
-              }
-            },
+                    try {
+                      setState(() {
+                        slots = [];
+                        model.clear(slots);
+                        barcodeCtrl.clear();
+                      });
+                    } catch (e) {
+                      debugPrint("Clear Error: $e");
+                    } finally {
+                      if (mounted) {
+                        setState(() => _isClearing = false);
+                      }
+                    }
+                  },
           ),
 
           const SizedBox(width: 6),
@@ -3266,29 +3974,33 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
               height: btnHeight,
               child: TextField(
                 controller: barcodeCtrl,
+                focusNode: barcodeFocus,
+                autofocus: true,
                 cursorColor: Colors.white,
-                textInputAction: TextInputAction.done,
-                onSubmitted: (_) => _handleClaim(),
+
+                // 🔥 Auto detect scanner + manual typing
+                onChanged: (value) {
+                  if (debounce?.isActive ?? false) {
+                    debounce!.cancel();
+                  }
+
+                  debounce = Timer(const Duration(seconds: 1), () {
+                    if (value.trim().isNotEmpty) {
+                      _handleClaim();
+                    }
+                  });
+                },
+
                 style: const TextStyle(
                   fontSize: 14,
                   fontWeight: FontWeight.w600,
-                  color: Colors.grey,
+                  color: Colors.white,
                 ),
                 decoration: InputDecoration(
                   hintText: "Enter / Scan Barcode",
                   filled: true,
-                  fillColor: MaterialStateColor.resolveWith((states) {
-                    if (states.contains(MaterialState.focused)) {
-                      return const Color.fromRGBO(52, 73, 95, 1);
-                    }
-                    return Colors.white;
-                  }),
-                  hintStyle: MaterialStateTextStyle.resolveWith((states) {
-                    if (states.contains(MaterialState.focused)) {
-                      return const TextStyle(color: Colors.white70);
-                    }
-                    return const TextStyle(color: Colors.white);
-                  }),
+                  fillColor: const Color.fromRGBO(52, 73, 95, 1),
+                  hintStyle: const TextStyle(color: Colors.white70),
                   contentPadding: const EdgeInsets.symmetric(horizontal: 12),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(6),
@@ -3324,7 +4036,7 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
             bgColor: Colors.deepPurple,
             width: btnWidth,
             height: btnHeight,
-            onTap: () => openTransactionDialog(context, userId,widget.slot),
+            onTap: () => openTransactionDialog(context, userId, widget.slot),
           ),
 
           const SizedBox(width: 4),
@@ -3351,14 +4063,13 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
         ],
       ),
     );
-  }  //
-
+  } //
 
   Future<void> _handleClaim() async {
     if (isClaiming) return;
 
     final id = controller.model.barcodeController.text.trim();
-
+    controller.model.barcodeController.clear();
     if (id.isEmpty) {
       showInfoDialog(
         context: context,
@@ -3378,8 +4089,7 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
       final bool status = result["status"] == true;
       final String message = result["message"];
       final int winner = result["winner"] ?? 0;
-      final int wallet =
-          int.tryParse(result["walate"].toString()) ?? 0;
+      final int wallet = int.tryParse(result["walate"].toString()) ?? 0;
 
       if (!status) {
         showInfoDialog(
@@ -3401,8 +4111,6 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
         title: "Already Claimed",
         subtitle: message,
       );
-
-      controller.model.barcodeController.clear();
     } catch (e) {
       if (mounted) {
         showInfoDialog(
@@ -3419,11 +4127,11 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
   }
 
   Future<void> _showWinnerDialog(
-      String id,
-      String message,
-      int winner,
-      int wallet,
-      ) async {
+    String id,
+    String message,
+    int winner,
+    int wallet,
+  ) async {
     if (!mounted) return;
 
     await showDialog(
@@ -3442,9 +4150,7 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
               end: Alignment.bottomRight,
             ),
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: const Color(0xFFEAB676).withOpacity(0.4),
-            ),
+            border: Border.all(color: const Color(0xFFEAB676).withOpacity(0.4)),
             boxShadow: [
               BoxShadow(
                 color: const Color(0xFFEAB676).withOpacity(0.2),
@@ -3468,9 +4174,7 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
                       Color(0xFFD4A054),
                     ],
                   ),
-                  borderRadius: BorderRadius.vertical(
-                    top: Radius.circular(16),
-                  ),
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
                 ),
                 child: const Column(
                   children: [
@@ -3528,8 +4232,7 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
                         color: const Color(0xFF0D0D1A),
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(
-                          color:
-                          const Color(0xFFEAB676).withOpacity(0.35),
+                          color: const Color(0xFFEAB676).withOpacity(0.35),
                         ),
                       ),
                       child: Column(
@@ -3537,8 +4240,7 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
                           Text(
                             "PRIZE AMOUNT",
                             style: TextStyle(
-                              color: const Color(0xFFEAB676)
-                                  .withOpacity(0.8),
+                              color: const Color(0xFFEAB676).withOpacity(0.8),
                               fontSize: 11,
                               letterSpacing: 2,
                               fontWeight: FontWeight.w700,
@@ -3570,14 +4272,12 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Row(
-                        mainAxisAlignment:
-                        MainAxisAlignment.spaceBetween,
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(
                             "Updated Balance",
                             style: TextStyle(
-                              color:
-                              Colors.white.withOpacity(0.6),
+                              color: Colors.white.withOpacity(0.6),
                               fontSize: 12,
                             ),
                           ),
@@ -3601,15 +4301,11 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
                       child: ElevatedButton(
                         onPressed: () => Navigator.pop(context),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor:
-                          const Color(0xFFEAB676),
+                          backgroundColor: const Color(0xFFEAB676),
                           foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                            vertical: 14,
-                          ),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(
-                            borderRadius:
-                            BorderRadius.circular(8),
+                            borderRadius: BorderRadius.circular(8),
                           ),
                           elevation: 0,
                         ),
@@ -3631,6 +4327,7 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
       ),
     );
   }
+
   // Widget _modernBtn(
   //   String text,
   //   Color bgColor,
@@ -3737,7 +4434,6 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
   // }
 }
 
-
 class ModernBtn extends StatefulWidget {
   final String text;
   final Color textColor;
@@ -3759,6 +4455,7 @@ class ModernBtn extends StatefulWidget {
   @override
   State<ModernBtn> createState() => _ModernBtnState();
 }
+
 class _ModernBtnState extends State<ModernBtn> {
   bool isPressed = false;
 
@@ -3784,12 +4481,12 @@ class _ModernBtnState extends State<ModernBtn> {
             boxShadow: isPressed
                 ? []
                 : [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.35),
-                offset: const Offset(0, 3),
-                blurRadius: 6,
-              ),
-            ],
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.35),
+                      offset: const Offset(0, 3),
+                      blurRadius: 6,
+                    ),
+                  ],
           ),
           child: Stack(
             children: [
@@ -3797,7 +4494,7 @@ class _ModernBtnState extends State<ModernBtn> {
               Center(
                 child: Text(
                   widget.text,
-                  style:  TextStyle(
+                  style: TextStyle(
                     color: widget.textColor,
                     fontWeight: FontWeight.w700,
                     fontSize: 14,

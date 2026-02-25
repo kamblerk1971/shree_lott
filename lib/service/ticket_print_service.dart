@@ -247,275 +247,234 @@ class TicketPrintService {
 
     final pdf = pw.Document();
 
-    /// ===== CALCULATE HEIGHT =====
-
-    const double rowHeight = 14;      // each number row approx height
-    const double headerHeight = 140;  // brand + metadata + divider
-    const double footerHeight = 120;  // summary + barcode
-    const double spacingBetweenTickets = 40;
+    const double rowHeight = 14;
+    const double headerHeight = 140;
+    const double footerHeight = 120;
 
     final int rowsPerTicket = selections.length;
-    final int ticketCount = ticketIds.length;
 
     final double singleTicketHeight =
-        headerHeight +
-            (rowsPerTicket * rowHeight) +
-            footerHeight;
+        headerHeight + (rowsPerTicket * rowHeight) + footerHeight + 100;
 
-    final double totalHeight =
-        (singleTicketHeight * ticketCount) +
-            (spacingBetweenTickets * (ticketCount - 1));
-
-    /// Add little safety buffer
-    final double safeHeight = totalHeight + 100;
-
-    pdf.addPage(
-      pw.MultiPage(
-        pageFormat: PdfPageFormat(
-          2.5 * PdfPageFormat.inch, // ✅ your printer width
-          PdfPageFormat.a4.height, // ✅ finite height required
+    // ✅ Each ticket = its own page = auto cut
+    for (int i = 0; i < ticketIds.length; i++) {
+      pdf.addPage(
+        pw.Page(
+          pageFormat: PdfPageFormat(
+            2.5 * PdfPageFormat.inch,
+            PdfPageFormat.a4.height, // ✅ exact height per ticket
+          ),
+          margin: pw.EdgeInsets.fromLTRB(
+            PdfStyleConstants.pageMarginDefault,
+            PdfStyleConstants.pageMarginDefault,
+            PdfStyleConstants.pageMarginDefault,
+            PdfStyleConstants.pageMarginBottom,
+          ),
+          build: (context) => _buildTicketContent(
+            selections: selections,
+            ticketId: "SL${ticketIds[i]}",
+            date: date,
+            time: i < ticketTimes.length
+                ? ticketTimes[i]
+                : ticketTimes.first,
+            totalQty: totalQty,
+            ticketAmount: i < ticketsAmounts.length
+                ? ticketsAmounts[i]
+                : ticketsAmounts.first,
+            userId: userId,
+          ),
         ),
-        margin: pw.EdgeInsets.fromLTRB(
-          PdfStyleConstants.pageMarginDefault,
-          PdfStyleConstants.pageMarginDefault,
-          PdfStyleConstants.pageMarginDefault,
-          PdfStyleConstants.pageMarginBottom,
-        ),
-        build: (context) {
-          final List<pw.Widget> content = [];
-
-          for (int i = 0; i < ticketIds.length; i++) {
-            content.add(
-              _buildTicketContent(
-                selections: selections,
-                ticketId: "SL${ticketIds[i]}",
-                date: date,
-                time: i < ticketTimes.length
-                    ? ticketTimes[i]
-                    : ticketTimes.first,
-                totalQty: totalQty,
-                ticketAmount: i < ticketsAmounts.length
-                    ? ticketsAmounts[i]
-                    : ticketsAmounts.first,
-                userId: userId,
-              ),
-            );
-
-            if (i != ticketIds.length - 1) {
-              content.add(
-                buildVerticalSpace(
-                  PdfLayoutConstants.spacingXXLarge,
-                ),
-              );
-            }
-          }
-
-          return content;
-        },
-      ),
-    );
+      );
+    }
 
     await Printing.directPrintPdf(
       printer: printer,
       onLayout: (_) async => pdf.save(),
     );
   }
+
   static pw.Widget _buildTicketContent({
-    required Map<String, int> selections,
-    required String ticketId,
-    required String date,
-    required String time,
-    required int totalQty,
-    required int ticketAmount,
-    required String userId,
-  }) {
-    return pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        // BRAND
-        pw.Column(
-          mainAxisAlignment: pw.MainAxisAlignment.start,
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
-          children: [
-            pw.Text(
-              'Shree Lott',
-              style: pw.TextStyle(
-                fontSize: PdfStyleConstants.brandFontSize,
-                fontWeight: pw.FontWeight.bold,
+      required Map<String, int> selections,
+      required String ticketId,
+      required String date,
+      required String time,
+      required int totalQty,
+      required int ticketAmount,
+      required String userId,
+    }) {
+      return pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        children: [
+          // BRAND
+          pw.Column(
+            mainAxisAlignment: pw.MainAxisAlignment.start,
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Text(
+                'Shree Lott',
+                style: pw.TextStyle(
+                  fontSize: PdfStyleConstants.brandFontSize,
+                  fontWeight: pw.FontWeight.bold,
+                ),
               ),
+              pw.Text(
+                'FOR AMUSEMENT ONLY',
+                style: pw.TextStyle(fontSize: PdfStyleConstants.brandFontSize),
+              ),
+            ],
+          ),
+
+          // METADATA
+          buildKeyValueRow(
+            'Terminal ID',
+            userId,
+            keyFontSize: PdfStyleConstants.legalTextSize,
+          ),
+          buildKeyValueRow(
+            'Draw Date',
+            date,
+            keyFontSize: PdfStyleConstants.legalTextSize,
+          ),
+          buildKeyValueRow(
+            'Time',
+            "${(int.parse(time.split(':')[0]) % 12 == 0 ? 12 : int.parse(time.split(':')[0]) % 12)}:${time.split(':')[1]} ${int.parse(time.split(':')[0]) >= 12 ? 'PM' : 'AM'}",
+            keyFontSize: PdfStyleConstants.legalTextSize,
+          ),
+          buildKeyValueRow(
+            'Ticket ID',
+            ticketId,
+            keyFontSize: PdfStyleConstants.legalTextSize,
+          ),
+
+          buildDivider(
+            type: DividerType.light,
+            verticalPadding: PdfLayoutConstants.spacingSmall,
+          ),
+
+          // TABLE HEADER
+
+
+          buildVerticalSpace(PdfLayoutConstants.spacingMedium),
+
+          // TABLE BODY
+          ..._buildTicketRows(selections),
+
+          buildDivider(
+            type: DividerType.light,
+            verticalPadding: PdfLayoutConstants.spacingSmall,
+          ),
+
+          // SUMMARY
+          buildKeyValueRow(
+            'Points',
+            ticketAmount.toString(),
+            keyFontSize: PdfStyleConstants.legalTextSize,
+            valueFontSize: PdfStyleConstants.legalTextSize,
+            verticalPadding: PdfLayoutConstants.spacingSmall,
+          ),
+          buildKeyValueRow(
+            'Total Qty',
+            totalQty.toString(),
+            keyFontSize: PdfStyleConstants.legalTextSize,
+            valueFontSize: PdfStyleConstants.legalTextSize,
+            verticalPadding: PdfLayoutConstants.spacingSmall,
+          ),
+
+          buildVerticalSpace(PdfLayoutConstants.spacingXSmall),
+
+          // BARCODE
+          pw.Center(
+            child: pw.BarcodeWidget(
+              barcode: pw.Barcode.code128(),
+              data: ticketId,
+              width: PdfLayoutConstants.barcodeWidth,
+              height: PdfLayoutConstants.barcodeHeight,
             ),
-            pw.Text(
-              'FOR AMUSEMENT ONLY',
-              style: pw.TextStyle(fontSize: PdfStyleConstants.brandFontSize),
-            ),
-          ],
-        ),
-
-        // METADATA
-        buildKeyValueRow(
-          'Terminal ID',
-          userId,
-          keyFontSize: PdfStyleConstants.legalTextSize,
-        ),
-        buildKeyValueRow(
-          'Draw Date',
-          date,
-          keyFontSize: PdfStyleConstants.legalTextSize,
-        ),
-        buildKeyValueRow(
-          'Time',
-          "${(int.parse(time.split(':')[0]) % 12 == 0 ? 12 : int.parse(time.split(':')[0]) % 12)}:${time.split(':')[1]} ${int.parse(time.split(':')[0]) >= 12 ? 'PM' : 'AM'}",
-          keyFontSize: PdfStyleConstants.legalTextSize,
-        ),
-        buildKeyValueRow(
-          'Ticket ID',
-          ticketId,
-          keyFontSize: PdfStyleConstants.legalTextSize,
-        ),
-
-        buildDivider(
-          type: DividerType.light,
-          verticalPadding: PdfLayoutConstants.spacingSmall,
-        ),
-
-        // TABLE HEADER
-        pw.Padding(
-          padding: pw.EdgeInsets.symmetric(
-            vertical: PdfLayoutConstants.spacingMedium,
           ),
-          child: pw.Row(
-            children: List.generate(PdfLayoutConstants.gridColumnsTicket, (_) {
-              return pw.Expanded(
-                child: pw.Row(
-                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                  children: [
-                    buildTableCell(
-                      'NUM',
-                      bold: true,
-                      fontSize: PdfStyleConstants.tableHeaderSize,
-                    ),
-                    buildTableCell(
-                      'QTY',
-                      bold: true,
-                      fontSize: PdfStyleConstants.tableHeaderSize,
-                    ),
-                    pw.SizedBox(width: PdfLayoutConstants.spacingMedium),
-                  ],
-                ),
-              );
-            }),
+
+          buildVerticalSpace(PdfLayoutConstants.spacingMedium),
+
+          buildCenteredText(
+            ticketId,
+            fontSize: PdfStyleConstants.barcodeTextSize,
           ),
-        ),
+        ],
+      );
+    }
 
-        buildVerticalSpace(PdfLayoutConstants.spacingMedium),
+    /// Build ticket rows in 3-column grid layout
+  static List<pw.Widget> _buildTicketRows(
+      Map<String, int> selections,
+      ) {
+    final entries = selections.entries.toList()
+      ..sort((a, b) => a.key.compareTo(b.key));
 
-        // TABLE BODY
-        ..._buildTicketRows(selections),
+    const int columns = 3;
+    const int blockWidth = 9; // perfect fit for "0000 99"
 
-        buildDivider(
-          type: DividerType.light,
-          verticalPadding: PdfLayoutConstants.spacingSmall,
-        ),
+    final List<pw.Widget> widgets = [];
 
-        // SUMMARY
-        buildKeyValueRow(
-          'Points',
-          ticketAmount.toString(),
-          keyFontSize: PdfStyleConstants.legalTextSize,
-          valueFontSize: PdfStyleConstants.legalTextSize,
-          verticalPadding: PdfLayoutConstants.spacingSmall,
-        ),
-        buildKeyValueRow(
-          'Total Qty',
-          totalQty.toString(),
-          keyFontSize: PdfStyleConstants.legalTextSize,
-          valueFontSize: PdfStyleConstants.legalTextSize,
-          verticalPadding: PdfLayoutConstants.spacingSmall,
-        ),
-
-        buildVerticalSpace(PdfLayoutConstants.spacingXSmall),
-
-        // BARCODE
-        pw.Center(
-          child: pw.BarcodeWidget(
-            barcode: pw.Barcode.code128(),
-            data: ticketId,
-            width: PdfLayoutConstants.barcodeWidth,
-            height: PdfLayoutConstants.barcodeHeight,
-          ),
-        ),
-
-        buildVerticalSpace(PdfLayoutConstants.spacingMedium),
-
-        buildCenteredText(
-          ticketId,
-          fontSize: PdfStyleConstants.barcodeTextSize,
-        ),
-      ],
+    final textStyle =
+    pw.TextStyle(
+      fontSize: 8,
+      font: pw.Font.courier(), // important for alignment
     );
-  }
 
-  /// Build ticket rows in 3-column grid layout
-  static List<pw.Widget> _buildTicketRows(Map<String, int> selections) {
-    final entries = selections.entries.toList();
-    List<pw.Widget> rows = [];
+    final String horizontalBorder =
+        "-" * ((blockWidth * columns) + (columns + 1));
 
-    for (
-      int i = 0;
-      i < entries.length;
-      i += PdfLayoutConstants.gridColumnsTicket
-    ) {
-      final slice = entries
-          .skip(i)
-          .take(PdfLayoutConstants.gridColumnsTicket)
-          .toList();
+    // TOP BORDER
+    widgets.add(pw.Text(horizontalBorder, style: textStyle));
 
-      rows.add(
-        pw.Padding(
-          padding: pw.EdgeInsets.symmetric(
-            vertical: PdfLayoutConstants.spacingSmall,
-          ),
-          child: pw.Row(
-            children: List.generate(PdfLayoutConstants.gridColumnsTicket, (
-              index,
-            ) {
-              if (index >= slice.length) {
-                return pw.Expanded(child: pw.Container());
-              }
+    // HEADER
+    final headerCells = List.generate(
+      columns,
+          (_) => "Num  Qty".padRight(blockWidth),
+    );
 
-              final entry = slice[index];
+    widgets.add(
+      pw.Text(
+        "|${headerCells.join("|")}|",
+        style: textStyle.copyWith(fontWeight: pw.FontWeight.bold),
+      ),
+    );
 
-              return pw.Expanded(
-                child: pw.Row(
-                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                  children: [
-                    pw.Text(
-                      entry.key.padLeft(4, '0'),
-                      style: pw.TextStyle(
-                        fontSize: PdfStyleConstants.tableDataSize,
-                      ),
-                    ),
-                    pw.Text(
-                      entry.value.toString(),
-                      style: pw.TextStyle(
-                        fontSize: PdfStyleConstants.tableDataSize,
-                        fontWeight: pw.FontWeight.bold,
-                      ),
-                    ),
-                    pw.SizedBox(height: PdfLayoutConstants.spacingMedium),
-                  ],
-                ),
-              );
-            }),
-          ),
+    widgets.add(pw.Text(horizontalBorder, style: textStyle));
+
+    // DATA ROWS
+    for (int i = 0; i < entries.length; i += columns) {
+      final List<String> rowCells = [];
+
+      for (int c = 0; c < columns; c++) {
+        if (i + c < entries.length) {
+          final entry = entries[i + c];
+
+          final cell =
+              "${entry.key.padLeft(4, '0')}  ${entry.value.toString().padLeft(2)}";
+
+          rowCells.add(cell.padRight(blockWidth));
+        } else {
+          rowCells.add("".padRight(blockWidth));
+        }
+      }
+
+      widgets.add(
+        pw.Text(
+          "|${rowCells.join("|")}|",
+          style: textStyle,
         ),
       );
     }
 
-    return rows;
+    // BOTTOM BORDER
+    widgets.add(pw.Text(horizontalBorder, style: textStyle));
+
+    return widgets;
   }
 
-  // ================= POINT SUMMARY REPORTS =================
+
+
+
 
   static Future<void> printPointSummaryReport({
     required BuildContext context,

@@ -326,12 +326,22 @@ class HomeController {
     if (json["status"] != true) return [];
 
     final List list = json["all_ticket"] ?? [];
-    return list.map((e) => TransactionModel.fromJson(e)).toList();
+
+    return list
+        .map((e) => TransactionModel.fromJson(e))
+        .toList()
+      ..sort((a, b) {
+        // Convert "HH:mm" string to comparable minutes
+        int toMinutes(String slot) {
+          final parts = slot.split(':');
+          return int.parse(parts[0]) * 60 + int.parse(parts[1]);
+        }
+
+        return toMinutes(b.slot).compareTo(toMinutes(a.slot));
+      });
   }
 
-  Future<Map<String, dynamic>> cancelBet({
-    required String id,
-  }) async {
+  Future<Map<String, dynamic>> cancelBet({required String id}) async {
     try {
       debugPrint("════════════ CANCEL BET START ════════════");
       debugPrint("🎟 Ticket ID → $id");
@@ -344,16 +354,13 @@ class HomeController {
       debugPrint("📦 API RESPONSE → $json");
 
       if (json == null) {
-        return {
-          "success": false,
-          "message": "No response from server",
-        };
+        return {"success": false, "message": "No response from server"};
       }
 
       final bool status = json["status"] == true;
       final String message =
           json["message"]?.toString() ??
-              (status ? "Bet cancelled successfully" : "Cancel failed");
+          (status ? "Bet cancelled successfully" : "Cancel failed");
 
       debugPrint("✔ Status → $status");
       debugPrint("📝 Message → $message");
@@ -363,9 +370,8 @@ class HomeController {
         "success": status,
         "message": message,
         "data": json["data"], // optional if backend sends
-        "wallet":json["wallet"]
+        "wallet": json["wallet"],
       };
-
     } catch (e, stack) {
       debugPrint("❌ cancelBet Error → $e");
       debugPrint("📛 StackTrace → $stack");
@@ -377,9 +383,7 @@ class HomeController {
     }
   }
 
-  Future<Map<String, dynamic>> claim({
-    required String id,
-  }) async {
+  Future<Map<String, dynamic>> claim({required String id}) async {
     try {
       final cleanId = id.replaceAll(RegExp(r'sl', caseSensitive: false), '');
 
@@ -395,31 +399,34 @@ class HomeController {
       // {"status":false,"message":"Please Enter valid ticket no."}
 
       final bool status = json["status"] == 1 || json["status"] == true;
-      final String message = json["message"]?.toString()
-          ?? json["msg"]?.toString()
-          ?? "Please enter a valid ticket number.";
+      final String message =
+          json["message"]?.toString() ??
+          json["msg"]?.toString() ??
+          "Please enter a valid ticket number.";
 
       return {
-        "status"     : status,
-        "message"    : message,
-        "winner"     : json["winner"]     ?? 0,
-        "walate"     : json["walate"]     ?? 0,
-        "acc_paid"   : json["acc_paid"]   ?? 0,
-        "sale"       : json["sale"]       ?? 0,
-        "commission" : json["commission"] ?? 0,
+        "status": status,
+        "message": message,
+        "winner": json["winner"] ?? 0,
+        "walate": json["walate"] ?? 0,
+        "acc_paid": json["acc_paid"] ?? 0,
+        "sale": json["sale"] ?? 0,
+        "commission": json["commission"] ?? 0,
       };
     } catch (e) {
       return {
-        "status"     : false,
-        "message"    : "Something went wrong. Please try again.",
-        "winner"     : 0,
-        "walate"     : 0,
-        "acc_paid"   : 0,
-        "sale"       : 0,
-        "commission" : 0,
+        "status": false,
+        "message": "Something went wrong. Please try again.",
+        "winner": 0,
+        "walate": 0,
+        "acc_paid": 0,
+        "sale": 0,
+        "commission": 0,
       };
     }
-  }  /// ===================== SHOP REPORT =====================
+  }
+
+  /// ===================== SHOP REPORT =====================
   Future<ShopReportResponse?> fetchReport({
     required String from,
     required String to,
@@ -445,6 +452,7 @@ class HomeController {
     required BuildContext context,
   }) async {
     try {
+      print("User Id : $userId");
       final url =
           "${ApiConstants.baseUrl}${ApiConstants.printTicket}/$ticketId";
 
@@ -463,7 +471,7 @@ class HomeController {
           (json["parent_all"] as List<dynamic>?)
               ?.map((e) => e.toString())
               .toList() ??
-              [];
+          [];
 
       final String drawDate = json["draw_date"] ?? "";
       final String ticketTime = json["walate2"] ?? "";
@@ -480,42 +488,36 @@ class HomeController {
         final int c = int.tryParse(row["c"].toString()) ?? 0;
         final int s = int.tryParse(row["s"].toString()) ?? 0;
         final int point = int.tryParse(row["point"].toString()) ?? 1;
+        final int point2 = int.tryParse(row["point"].toString()) ?? 1;
 
         final int rowAmount =
             int.tryParse(row["total_bet_load"].toString()) ?? 0;
 
-        totalAmount += rowAmount;   // ✅ Backend amount used directly
+        totalAmount += rowAmount; // ✅ Backend amount used directly
 
         int rowQty = 0;
 
         row.forEach((key, value) {
-          if (key.startsWith("c") &&
-              key.length == 3 &&
-              value != null) {
-
-            final int columnAmount =
-                int.tryParse(value.toString()) ?? 0;
+          if (key.startsWith("c") && key.length == 3 && value != null) {
+            final int columnAmount = int.tryParse(value.toString()) ?? 0;
 
             if (columnAmount <= 0) return;
 
             // ✅ qty = amount / point
-            final int qty =
-            (point > 0) ? (columnAmount ~/ point) : 0;
+            final int qty = (point > 0) ? (columnAmount ~/ point) : 0;
 
             if (qty <= 0) return;
 
             final String lastTwoDigits = key.substring(1);
-            final String fullNumber =
-            "$c$s$lastTwoDigits".padLeft(4, '0');
+            final String fullNumber = "$c$s$lastTwoDigits".padLeft(4, '0');
 
-            debugPrint(
-                "➡ $fullNumber | ColumnAmt: $columnAmount | Qty: $qty");
+            debugPrint("➡ $fullNumber | ColumnAmt: $columnAmount | Qty: $qty");
 
             rowQty += qty;
 
             selections.update(
               fullNumber,
-                  (existing) => existing + qty,
+              (existing) => existing + qty,
               ifAbsent: () => qty,
             );
           }
@@ -523,14 +525,12 @@ class HomeController {
 
         totalQty += rowQty;
 
-        debugPrint(
-            "✔ Row Summary → Qty: $rowQty | Amount: $rowAmount");
+        debugPrint("✔ Row Summary → Qty: $rowQty | Amount: $rowAmount");
         debugPrint("------------------------------------------------");
       }
 
       final sortedSelections = Map.fromEntries(
-        selections.entries.toList()
-          ..sort((a, b) => a.key.compareTo(b.key)),
+        selections.entries.toList()..sort((a, b) => a.key.compareTo(b.key)),
       );
 
       debugPrint("📊 FINAL SELECTION MAP:");
@@ -544,21 +544,19 @@ class HomeController {
       debugPrint("🎟 Tickets → $parentAll");
       debugPrint("════════════ PRINTING ════════════");
 
+
       await TicketPrintService.printTicket(
         context: context,
         selections: sortedSelections,
         ticketIds: parentAll,
-        ticketTimes:
-        List.generate(parentAll.length, (_) => ticketTime),
+        ticketTimes: List.generate(parentAll.length, (_) => ticketTime),
         date: drawDate,
         totalQty: totalQty,
-        ticketsAmounts:
-        List.generate(parentAll.length, (_) => totalAmount),
+        ticketsAmounts: List.generate(parentAll.length, (_) => totalAmount),
         userId: userId,
       );
 
       debugPrint("════════════ REPRINT END ════════════");
-
     } catch (e, stack) {
       debugPrint("❌ reprintTicket Error → $e");
       debugPrint("📛 StackTrace → $stack");
