@@ -32,11 +32,10 @@ import 'package:flutter/material.dart';
 
 class BettingGridModel {
   TextEditingController barcodeController = TextEditingController();
-  final TextEditingController barcodeCtrl = TextEditingController();
   final FocusNode barcodeFocus = FocusNode();
 
-  Timer? _debounce;
-  bool _isProcessing = false;
+  Timer? debounce;
+  DateTime? firstKeyTime;
   final IndexController indexController = Get.put(IndexController());
 
   static const double cellW = 78;
@@ -49,6 +48,7 @@ class BettingGridModel {
   bool low = true;
   bool block = false;
   bool isFPChecked = false;
+  bool isScanActive = false;
 
   int seriesStart = 0;
   int visibleStart = 0;
@@ -142,7 +142,12 @@ class BettingGridModel {
 
   // ─── Row apply ─────────────────────────────────────────────────────────────
 
-  void applyRowValue(int row, String v, BuildContext context) {
+  void applyRowValue(
+    int row,
+    String v,
+    BuildContext context,
+    VoidCallback onUpdated, // 🔥 added callback
+  ) {
     final wallet = Get.find<WalletController>();
 
     final bool isEmpty = v.trim().isEmpty;
@@ -163,7 +168,6 @@ class BettingGridModel {
     // ─── STEP 1: BUILD TARGETS ─────────────────────────────────────────────
     for (final s in selectedSeries_Set) {
       if (high) {
-        // HIGH → all 10 ranges
         for (int r = 0; r < 10; r++) {
           final base = s * 1000 + r * 100 + row * 10;
           for (int c = 0; c < 10; c++) {
@@ -175,7 +179,6 @@ class BettingGridModel {
           }
         }
       } else {
-        // LOW → selected ranges only
         for (final r in selectedRange_Set) {
           final base = s * 1000 + r * 100 + row * 10;
           for (int c = 0; c < 10; c++) {
@@ -196,7 +199,6 @@ class BettingGridModel {
       final int oldQty = cellQty[n] ?? 0;
       final int finalQty = isEmpty ? 0 : newQty;
       final int diffQty = finalQty - oldQty;
-
       final double costPerCell = _costPerCell(n);
 
       if (diffQty > 0) {
@@ -208,7 +210,6 @@ class BettingGridModel {
 
     // ─── STEP 3: WALLET CHECK ──────────────────────────────────────────────
     if (totalRequired > 0 && !wallet.hasEnough(totalRequired)) {
-      debugPrint("❌ Low balance. Needed: $totalRequired");
       showLowBalanceSnackBar(context);
       return;
     }
@@ -226,10 +227,19 @@ class BettingGridModel {
       final r = (n % 1000) ~/ 100;
 
       final ctrl = _getCtrl(s, r, n);
-      ctrl.text = finalQty == 0 ? "" : finalQty.toString();
+      final newText = finalQty == 0 ? "" : finalQty.toString();
+
+      if (ctrl.text != newText) {
+        ctrl.value = TextEditingValue(
+          text: newText,
+          selection: TextSelection.collapsed(offset: newText.length),
+        );
+      }
     }
 
     recalc();
+
+    onUpdated(); // 🔥 rebuild UI here
 
     debugPrint(
       "ROW DONE | Mode=${high ? 'HIGH' : 'LOW'} | "
@@ -240,7 +250,12 @@ class BettingGridModel {
 
   // ─── Column apply ──────────────────────────────────────────────────────────
 
-  void applyColumnValue(int col, String v, BuildContext context) {
+  void applyColumnValue(
+    int col,
+    String v,
+    BuildContext context,
+    VoidCallback onUpdated, // 🔥 added callback
+  ) {
     final wallet = Get.find<WalletController>();
 
     final bool isEmpty = v.trim().isEmpty;
@@ -258,10 +273,8 @@ class BettingGridModel {
 
     final Set<int> targets = {};
 
-    // ─── STEP 1: BUILD TARGETS ─────────────────────────────────────────────
     for (final s in selectedSeries_Set) {
       if (high) {
-        // HIGH → all 10 ranges
         for (int r = 0; r < 10; r++) {
           final base = s * 1000 + r * 100 + col;
           for (int row = 0; row < 10; row++) {
@@ -273,7 +286,6 @@ class BettingGridModel {
           }
         }
       } else {
-        // LOW → selected ranges only
         for (final r in selectedRange_Set) {
           final base = s * 1000 + r * 100 + col;
           for (int row = 0; row < 10; row++) {
@@ -289,12 +301,10 @@ class BettingGridModel {
 
     if (targets.isEmpty) return;
 
-    // ─── STEP 2: WALLET CALCULATION ────────────────────────────────────────
     for (final n in targets) {
       final int oldQty = cellQty[n] ?? 0;
       final int finalQty = isEmpty ? 0 : newQty;
       final int diffQty = finalQty - oldQty;
-
       final double costPerCell = _costPerCell(n);
 
       if (diffQty > 0) {
@@ -304,18 +314,14 @@ class BettingGridModel {
       }
     }
 
-    // ─── STEP 3: WALLET CHECK ──────────────────────────────────────────────
     if (totalRequired > 0 && !wallet.hasEnough(totalRequired)) {
-      debugPrint("❌ Low balance. Needed: $totalRequired");
       showLowBalanceSnackBar(context);
       return;
     }
 
-    // ─── STEP 4: APPLY WALLET ─────────────────────────────────────────────
     if (totalRequired > 0) wallet.deduct(totalRequired);
     if (totalRefund > 0) wallet.add(totalRefund);
 
-    // ─── STEP 5: APPLY VALUES SAFELY ──────────────────────────────────────
     for (final n in targets) {
       final int finalQty = isEmpty ? 0 : newQty;
       cellQty[n] = finalQty;
@@ -335,6 +341,8 @@ class BettingGridModel {
     }
 
     recalc();
+
+    onUpdated(); // this replaces setState()
 
     debugPrint(
       "COLUMN DONE | Mode=${high ? 'HIGH' : 'LOW'} | "
@@ -1511,9 +1519,9 @@ class BettingGridController {
 
     // ================= SLOT VALIDATION FIRST =================
 
-    if (slot.isEmpty && slots.isEmpty) {
-      return {"success": false, "failedAt": "slot_missing"};
-    }
+    // if (slot.isEmpty && slots.isEmpty) {
+    //   return {"success": false, "failedAt": "slot_missing"};
+    // }
 
     DateTime parseSlotTime(String slot) {
       final parts = slot.trim().split(' ');
@@ -1582,7 +1590,7 @@ class BettingGridController {
 
       debugPrint("✅ All Advanced Slots Valid");
     } else {
-      debugPrint("Mode → SINGLE SLOT");
+      debugPrint("Mode → SINGLE SLOT : ${slot} data ");
 
       final slotTime = parseSlotTime(slot);
 
@@ -1946,6 +1954,10 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
   }
 
   final RefreshController refreshController = Get.put(RefreshController());
+  final WalletController walletController = Get.put(WalletController());
+
+  String scanBuffer = "";
+  DateTime? firstKeyTime;
 
   @override
   void initState() {
@@ -1967,26 +1979,101 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
   }
 
   bool _handleKey(KeyEvent e) {
+    // Only process key down events
     if (e is! KeyDownEvent) return false;
 
-    if (e.logicalKey == LogicalKeyboardKey.f6) {
-      debugPrint("F6 Pressed → Print Ticket");
+    final key = e.logicalKey;
 
-      _handlePrintFromKey(); // 🔥 call async method separately
+    /*
+   * -----------------------------------------------------------
+   * 1. Handle Function Keys (Highest Priority)
+   * -----------------------------------------------------------
+   * These should be processed before scanner logic
+   * to avoid any interference with buffered scan data.
+   */
+
+    if (key == LogicalKeyboardKey.f6) {
+      debugPrint("F6 Pressed -> Print Ticket");
+      _handlePrintFromKey();
       return true;
     }
 
-    if (e.logicalKey == LogicalKeyboardKey.f7) {
-      debugPrint("F7 Pressed → Clear");
+    if (key == LogicalKeyboardKey.f7) {
+      debugPrint("F7 Pressed -> Clear");
       controller.model.clear(slots);
       return true;
     }
 
-    if (e.logicalKey == LogicalKeyboardKey.f5) {
-      debugPrint("F5 Pressed → Refresh & Clear");
+    if (key == LogicalKeyboardKey.f5) {
+      debugPrint("F5 Pressed -> Refresh & Clear");
       controller.model.clear(slots, isRefreshing: true);
       refreshController.refreshingData();
       return true;
+    }
+
+    /*
+   * -----------------------------------------------------------
+   * 2. Scanner Completion Detection (Enter Key)
+   * -----------------------------------------------------------
+   * Most Windows HID barcode scanners send an Enter key
+   * after transmitting all characters.
+   * We treat Enter as "scan completed".
+   */
+
+    if (key == LogicalKeyboardKey.enter) {
+      // If no buffer or timing info, ignore
+      if (scanBuffer.isEmpty || firstKeyTime == null) {
+        scanBuffer = "";
+        firstKeyTime = null;
+        return false;
+      }
+
+      final duration =
+          DateTime.now().difference(firstKeyTime!).inMilliseconds;
+
+      final scannedValue = scanBuffer;
+
+      // Reset buffer immediately
+      scanBuffer = "";
+      firstKeyTime = null;
+
+      // Scanner input is very fast (typically < 200ms on Windows)
+      final isScanner = duration < 200;
+
+      if (!isScanner) {
+        return false; // Likely manual typing
+      }
+
+      // If Claim box is not focused, show dialog
+      if (!controller.model.barcodeFocus.hasFocus) {
+        showInfoDialog(
+          context: context,
+          title: "Scanner Not Active",
+          subtitle: "Please click on Claim Box before scanning.",
+        );
+        return true; // Stop propagation
+      }
+
+      // Claim box is focused -> process scan
+      controller.model.barcodeController.text = scannedValue;
+      _handleClaim();
+
+      return true;
+    }
+
+    /*
+   * -----------------------------------------------------------
+   * 3. Collect Printable Characters for Scanner Buffer
+   * -----------------------------------------------------------
+   * We accumulate characters until Enter is received.
+   * Only single-character key labels are considered.
+   */
+
+    final keyLabel = key.keyLabel;
+
+    if (keyLabel.length == 1) {
+      firstKeyTime ??= DateTime.now();
+      scanBuffer += keyLabel;
     }
 
     return false;
@@ -2001,11 +2088,6 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
     );
 
     if (result["success"] == true) {
-      showInfoDialog(
-        context: context,
-        title: "Success",
-        subtitle: "Ticket printed successfully.",
-      );
       return;
     }
 
@@ -2087,42 +2169,50 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.grey.shade200,
-      body: Column(
-        children: [
-          _seriesBar(),
-          _topControls(),
-          // Option 1: Using Expanded (RECOMMENDED - Simplest)
-          // Expanded(
-          //   child: Scrollbar(
-          //     controller: _verticalController,
-          //     thumbVisibility: true,
-          //     child: SingleChildScrollView(
-          //       controller: _verticalController,
-          //       scrollDirection: Axis.vertical,
-          //       child: Scrollbar(
-          //         controller: _horizontalController,
-          //         thumbVisibility: true,
-          //         child: SingleChildScrollView(
-          //           controller: _horizontalController,
-          //           scrollDirection: Axis.horizontal,
-          //           child: SizedBox(
-          //             width: MediaQuery.of(context).size.width,
-          //             child: _grid(),
-          //           ),
-          //         ),
-          //       ),
-          //     ),
-          //   ),
-          // ),
-          _grid(),
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: () {
+        print("Outside of the claim box is tapped");
+        FocusScope.of(context).unfocus();
+        controller.model.isScanActive = false;
+      },
+      child: Scaffold(
+        backgroundColor: Colors.grey.shade200,
+        body: Column(
+          children: [
+            _seriesBar(),
+            _topControls(),
+            // Option 1: Using Expanded (RECOMMENDED - Simplest)
+            // Expanded(
+            //   child: Scrollbar(
+            //     controller: _verticalController,
+            //     thumbVisibility: true,
+            //     child: SingleChildScrollView(
+            //       controller: _verticalController,
+            //       scrollDirection: Axis.vertical,
+            //       child: Scrollbar(
+            //         controller: _horizontalController,
+            //         thumbVisibility: true,
+            //         child: SingleChildScrollView(
+            //           controller: _horizontalController,
+            //           scrollDirection: Axis.horizontal,
+            //           child: SizedBox(
+            //             width: MediaQuery.of(context).size.width,
+            //             child: _grid(),
+            //           ),
+            //         ),
+            //       ),
+            //     ),
+            //   ),
+            // ),
+            _grid(),
 
-          _bottomSummary(),
-          SizedBox(height: 4),
-          _bottomButtons(widget.id),
-          SizedBox(height: 4),
-        ],
+            _bottomSummary(),
+            SizedBox(height: 4),
+            _bottomButtons(widget.id),
+            SizedBox(height: 4),
+          ],
+        ),
       ),
     );
   }
@@ -3344,6 +3434,10 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
                 onChanged: (value) {
                   if (ctrl.text != value) return;
 
+                  if(value.contains("SL")){
+                    return;
+                  }
+
                   setState(() {
                     controller.model.onCellChanged(
                       n,
@@ -3468,8 +3562,12 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
                 maxWidth: 1,
               ),
             ),
-            onChanged: (v) =>
-                controller.model.applyColumnValue(col, v, context),
+            onChanged: (v) => controller.model.applyColumnValue(
+              col,
+              v,
+              context,
+              () => setState(() {}), // 🔥 rebuild UI here
+            ),
           ),
         ),
       ),
@@ -3559,8 +3657,12 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
                   focusedBorder: InputBorder.none,
                   disabledBorder: InputBorder.none,
                 ),
-                onChanged: (v) =>
-                    controller.model.applyRowValue(row, v, context),
+                onChanged: (v) => controller.model.applyRowValue(
+                  row,
+                  v,
+                  context,
+                  () => setState(() {}),
+                ),
               ),
             ),
           ),
@@ -3827,7 +3929,9 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
     final model = controller.model;
     final barcodeCtrl = model.barcodeController;
     final barcodeFocus = model.barcodeFocus;
-    var debounce = model._debounce;
+    var debounce = model.debounce;
+    var firstTime = model.firstKeyTime;
+    var isScanActive = model.isScanActive;
 
     return SizedBox(
       height: btnHeight,
@@ -3851,11 +3955,6 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
               );
 
               if (result["success"] == true) {
-                showInfoDialog(
-                  context: context,
-                  title: "Success",
-                  subtitle: "Ticket printed successfully.",
-                );
                 return;
               }
 
@@ -3975,17 +4074,43 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
               child: TextField(
                 controller: barcodeCtrl,
                 focusNode: barcodeFocus,
-                autofocus: true,
+                autofocus: false,
                 cursorColor: Colors.white,
+                textInputAction: TextInputAction.done,
 
-                // 🔥 Auto detect scanner + manual typing
-                onChanged: (value) {
-                  if (debounce?.isActive ?? false) {
-                    debounce!.cancel();
+                onTap: () {
+                  isScanActive = true;
+                },
+
+                // Manual Enter
+                onSubmitted: (value) {
+                  if (!barcodeFocus.hasFocus || !isScanActive) return;
+
+                  final input = value.trim();
+                  if (input.isNotEmpty) {
+                    _handleClaim();
                   }
+                },
 
-                  debounce = Timer(const Duration(seconds: 1), () {
-                    if (value.trim().isNotEmpty) {
+                // Scanner detect
+                onChanged: (value) {
+                  if (!barcodeFocus.hasFocus || !isScanActive) return;
+
+                  final input = value.trim();
+                  if (input.isEmpty) return;
+
+                  firstTime ??= DateTime.now();
+
+                  debounce?.cancel();
+
+                  debounce = Timer(const Duration(milliseconds: 250), () {
+                    final totalTime = DateTime.now()
+                        .difference(firstTime!)
+                        .inMilliseconds;
+
+                    firstTime = null;
+
+                    if (totalTime < 150) {
                       _handleClaim();
                     }
                   });
@@ -3996,6 +4121,7 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
                   fontWeight: FontWeight.w600,
                   color: Colors.white,
                 ),
+
                 decoration: InputDecoration(
                   hintText: "Enter / Scan Barcode",
                   filled: true,
@@ -4069,15 +4195,6 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
     if (isClaiming) return;
 
     final id = controller.model.barcodeController.text.trim();
-    controller.model.barcodeController.clear();
-    if (id.isEmpty) {
-      showInfoDialog(
-        context: context,
-        title: "Invalid Ticket",
-        subtitle: "Please enter or scan a ticket number.",
-      );
-      return;
-    }
 
     setState(() => isClaiming = true);
 
@@ -4120,6 +4237,7 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
         );
       }
     } finally {
+      await homeController.getWalletBalance().catchError((_) => null);
       if (mounted) {
         setState(() => isClaiming = false);
       }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:hive/hive.dart';
+import 'package:intl/intl.dart';
 import 'package:shreelott/controller/home_controller.dart';
 import 'package:shreelott/screens/helpers/batting_grid_view.dart';
 import '../consts/app_colors.dart';
@@ -189,7 +190,7 @@ class _ShopReportDialogState extends State<ShopReportDialog> {
       context: context,
       startDate: _fmt(from),
       endDate: _fmt(to),
-      rptDateTime: DateTime.now().toString(),
+      rptDateTime: DateFormat('dd-MM-yyyy hh:mm:ss a').format(DateTime.now()),
       loginId: loginId.toString(),
       userName: userName,
       name: name,

@@ -1202,6 +1202,7 @@ import 'package:hive/hive.dart';
 import 'package:shreelott/controller/index_controller.dart';
 import 'package:shreelott/models/shop_report_model.dart';
 import 'package:shreelott/screens/helpers/batting_grid_view.dart';
+import 'package:shreelott/screens/login_screen.dart';
 import 'package:shreelott/screens/splash_screen.dart';
 import 'package:shreelott/widgets/show_loading_overlay.dart';
 import '../consts/app_colors.dart';
@@ -1468,7 +1469,7 @@ class _HomeScreenState extends State<HomeScreen> {
     await _box.clear();
     if (!mounted) return;
     Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => SplashScreen()),
+      MaterialPageRoute(builder: (_) => LoginView()),
       (_) => false,
     );
   }
@@ -1487,13 +1488,15 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             _topHeader(indexController),
             YellowInfoBar(
-              time: _formatTime(_remainingSeconds),
-              draw: drawTime?.nextTimeSlot != null
+              time: _isGameTimeNow() ? _formatTime(_remainingSeconds) : "  ",
+              draw:
+                  (drawTime?.nextTimeSlot != null &&
+                      _isValidSlot(drawTime!.nextTimeSlot))
                   ? TimeOfDay(
                       hour: int.parse(drawTime!.nextTimeSlot.split(":")[0]),
                       minute: int.parse(drawTime!.nextTimeSlot.split(":")[1]),
                     ).format(context)
-                  : "--",
+                  : "  ",
               date: drawTime?.date ?? "--",
               terminal: terminal?.terminalUser ?? "--",
               lastAmount: lastTransaction?.amount ?? "0",
@@ -1504,7 +1507,7 @@ class _HomeScreenState extends State<HomeScreen> {
               child: BettingGridScreen(
                 limitUpdate: int.tryParse(walletBalance?.amount ?? '') ?? 0,
                 slot:
-                    _formatAmPmMinus15(drawTime?.nextTimeSlot ?? "00:00") ??
+                    _formatAmPmMinus(drawTime?.nextTimeSlot ?? "00:00") ??
                     "00:00",
                 id: terminal?.terminalUser ?? "--",
               ),
@@ -1513,6 +1516,30 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
     );
+  }
+
+  bool _isGameTimeNow() {
+    final now = TimeOfDay.now();
+    final nowMinutes = now.hour * 60 + now.minute;
+
+    const start = 9 * 60 + 45; // 09:45
+    const end = 21 * 60 + 30; // 21:30
+
+    if (!(nowMinutes >= start && nowMinutes <= end)) {
+      _countdownTimer?.cancel();
+      print("cancel");
+    }
+    return nowMinutes >= start && nowMinutes <= end;
+  }
+
+  bool _isValidSlot(String time) {
+    final parts = time.split(":");
+    final slotMinutes = int.parse(parts[0]) * 60 + int.parse(parts[1]);
+
+    const start = 9 * 60 + 45; // 09:45
+    const end = 21 * 60 + 30; // 21:30
+
+    return slotMinutes >= start && slotMinutes <= end;
   }
 
   // ================= UI =================
@@ -1654,13 +1681,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 child: Pressable(
                   onTap: () async {
                     try {
-                      showAccountDetailsDialog(
-                        context,
-                        {
-                          "userId": terminal?.terminalUser?.toString() ?? "0",
-                          "walletBalance": walletController.walletBalance,
-                        },
-                      );
+                      showAccountDetailsDialog(context, {
+                        "userId": terminal?.terminalUser?.toString() ?? "0",
+                        "walletBalance": walletController.walletBalance,
+                      });
                     } catch (e, s) {
                       debugPrint("Accounts Error: $e");
                       debugPrintStack(stackTrace: s);
@@ -1772,16 +1796,46 @@ class _HomeScreenState extends State<HomeScreen> {
     int hour = int.parse(parts[0]);
     int minute = parts.length > 1 ? int.parse(parts[1]) : 0;
 
-    minute -= 15;
+    var totalMinutes = hour * 60 + minute;
 
-    if (minute < 0) {
-      minute += 60;
-      hour -= 1;
+    // Before 09:45 → return empty
+    if (totalMinutes < (9 * 60 + 45)) {
+      return "";
     }
 
-    if (hour < 0) {
-      hour = 23;
+    // After 21:30 → cap to 21:30
+    if (totalMinutes > (21 * 60 + 30)) {
+      hour = 21;
+      minute = 30;
+    } else {
+      // Subtract 15 minutes
+      totalMinutes -= 15;
+
+      hour = totalMinutes ~/ 60;
+      minute = totalMinutes % 60;
     }
+
+    final int hour12 = hour % 12 == 0 ? 12 : hour % 12;
+    final String period = hour >= 12 ? 'PM' : 'AM';
+
+    return '${hour12.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')} $period';
+  }
+
+  String _formatAmPmMinus(String time) {
+    print(time);
+    final parts = time.split(':');
+
+    int hour = int.parse(parts[0]);
+    int minute = parts.length > 1 ? int.parse(parts[1]) : 0;
+
+    var totalMinutes = hour * 60 + minute;
+
+
+    // Subtract 15 minutes
+    totalMinutes -= 15;
+
+    hour = totalMinutes ~/ 60;
+    minute = totalMinutes % 60;
 
     final int hour12 = hour % 12 == 0 ? 12 : hour % 12;
     final String period = hour >= 12 ? 'PM' : 'AM';

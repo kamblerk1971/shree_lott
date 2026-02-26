@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:shreelott/screens/helpers/batting_grid_view.dart';
+import 'package:shreelott/screens/login_screen.dart';
 import 'package:shreelott/widgets/show_logout_dialog.dart';
 
 import '../controller/wallet_controller.dart';
@@ -60,6 +61,7 @@ class _YellowInfoBarState extends State<YellowInfoBar> {
 
   @override
   Widget build(BuildContext context) {
+
     return Container(
       height: 44,
       padding: const EdgeInsets.symmetric(horizontal: 12),
@@ -107,7 +109,7 @@ class _YellowInfoBarState extends State<YellowInfoBar> {
                   await box.clear();
 
                   Navigator.of(context).pushAndRemoveUntil(
-                    MaterialPageRoute(builder: (_) => const SplashScreen()),
+                    MaterialPageRoute(builder: (_) => const LoginView()),
                     (_) => false,
                   );
                 }

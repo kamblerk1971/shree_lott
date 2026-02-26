@@ -13,6 +13,7 @@ class RefreshController extends GetxController {
   }
 
   void refreshingData() async {
+    print("refresh data: ${refreshData.value}");
     refreshData.value = true;
 
     await Future.delayed(const Duration(milliseconds: 500));

@@ -11,7 +11,7 @@ Future<void> openTransactionDialog(
   String drawTime,
 ) async {
   final controller = HomeController();
-  print(drawTime);
+  // print(drawTime);
 
   showDialog(
     context: context,

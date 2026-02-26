@@ -4,7 +4,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:get/get.dart';
 
 import 'controller/wallet_controller.dart';
-import 'screens/splash_screen.dart';
+import 'screens/login_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -14,13 +14,32 @@ Future<void> main() async {
 
   Get.put(WalletController());
 
+  final box = Hive.box('app');
+
+  final bool isLoggedIn = box.get('isLoggedIn', defaultValue: false);
+  final String savedUser = box.get('username', defaultValue: '');
+  final String savedPass = box.get('password', defaultValue: '');
+
   runApp(
-    const MyApp(),
+    MyApp(
+      isLoggedIn: isLoggedIn,
+      savedUsername: savedUser,
+      savedPassword: savedPass,
+    ),
   );
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  final bool isLoggedIn;
+  final String savedUsername;
+  final String savedPassword;
+
+  const MyApp({
+    super.key,
+    required this.isLoggedIn,
+    required this.savedUsername,
+    required this.savedPassword,
+  });
 
   static const String appName = 'Shree Lott';
 
@@ -30,7 +49,6 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       title: appName,
 
-      // 🔥 IMPORTANT for DevicePreview
       useInheritedMediaQuery: true,
       locale: DevicePreview.locale(context),
       builder: DevicePreview.appBuilder,
@@ -39,7 +57,11 @@ class MyApp extends StatelessWidget {
       defaultTransition: Transition.fadeIn,
       transitionDuration: const Duration(milliseconds: 300),
 
-      home: const SplashScreen(),
+      home: LoginView(
+        isLoggedIn: isLoggedIn,
+        savedUsername: savedUsername,
+        savedPassword: savedPassword,
+      ),
     );
   }
 }
