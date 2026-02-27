@@ -84,7 +84,7 @@ class ApiClient {
       body: jsonEncode(body),
     );
 
-    print(response.body);
+    // print(response.body);
 
     if (response.statusCode != 200) {
       throw Exception("HTTP ${response.statusCode}");

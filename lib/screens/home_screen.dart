@@ -1822,7 +1822,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   String _formatAmPmMinus(String time) {
-    print(time);
     final parts = time.split(':');
 
     int hour = int.parse(parts[0]);
