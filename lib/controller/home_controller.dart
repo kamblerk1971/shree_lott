@@ -13,7 +13,7 @@ import 'wallet_controller.dart';
 /// API CONSTANTS
 /// ============================================================
 class ApiConstants {
-  static const String baseUrl = "https://bid.grocerkings.in/api";
+  static const String baseUrl = "https://bid.funmitra.in/api";
 
   static const String timer = "/get-timer";
   static const String drawTime = "/get-drawtime";
@@ -327,18 +327,15 @@ class HomeController {
 
     final List list = json["all_ticket"] ?? [];
 
-    return list
-        .map((e) => TransactionModel.fromJson(e))
-        .toList()
-      ..sort((a, b) {
-        // Convert "HH:mm" string to comparable minutes
-        int toMinutes(String slot) {
-          final parts = slot.split(':');
-          return int.parse(parts[0]) * 60 + int.parse(parts[1]);
-        }
+    return list.map((e) => TransactionModel.fromJson(e)).toList()..sort((a, b) {
+      // Convert "HH:mm" string to comparable minutes
+      int toMinutes(String slot) {
+        final parts = slot.split(':');
+        return int.parse(parts[0]) * 60 + int.parse(parts[1]);
+      }
 
-        return toMinutes(b.slot).compareTo(toMinutes(a.slot));
-      });
+      return toMinutes(b.slot).compareTo(toMinutes(a.slot));
+    });
   }
 
   Future<Map<String, dynamic>> cancelBet({required String id}) async {
@@ -461,6 +458,7 @@ class HomeController {
 
       final json = await _api.get(url);
 
+      print(json);
       if (json == null || json["status"] != true) {
         debugPrint("❌ Invalid API response");
         return;
@@ -529,10 +527,17 @@ class HomeController {
         debugPrint("------------------------------------------------");
       }
 
+      final int qtyMultiplier = (int.tryParse(json["data"][0]["point"].toString()) ?? 0) ~/ 2;
       final sortedSelections = Map.fromEntries(
-        selections.entries.toList()..sort((a, b) => a.key.compareTo(b.key)),
+        selections.entries
+            .map(
+              (e) => MapEntry(e.key, ((e.value * qtyMultiplier))),
+            )
+            .toList()
+          ..sort((a, b) => a.key.compareTo(b.key)),
       );
 
+      totalQty *= qtyMultiplier;
       debugPrint("📊 FINAL SELECTION MAP:");
       sortedSelections.forEach((num, qty) {
         debugPrint("   $num → $qty");
@@ -543,7 +548,6 @@ class HomeController {
       debugPrint("💰 Total Amount → $totalAmount");
       debugPrint("🎟 Tickets → $parentAll");
       debugPrint("════════════ PRINTING ════════════");
-
 
       await TicketPrintService.printTicket(
         context: context,
@@ -562,7 +566,6 @@ class HomeController {
       debugPrint("📛 StackTrace → $stack");
     }
   }
-
 
   void dispose() {
     _api.dispose();

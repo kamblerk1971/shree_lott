@@ -1285,12 +1285,27 @@ class _HomeScreenState extends State<HomeScreen> {
   HomeController homeController = HomeController();
   final RefreshController refreshController = Get.put(RefreshController());
 
+  DateTime? _f5Cooldown;
+  static const Duration _cooldownDuration = Duration(seconds: 5);
   bool _handleKey(KeyEvent e) {
     if (e is! KeyDownEvent) return false;
+    if (e is KeyRepeatEvent) return true;
 
     if (e.logicalKey == LogicalKeyboardKey.f5) {
+      final now = DateTime.now();
+
+      if (_f5Cooldown != null &&
+          now.difference(_f5Cooldown!) < _cooldownDuration) {
+        debugPrint("F5 blocked (cooldown active)");
+        return true;
+      }
+
+      _f5Cooldown = now;
+
       debugPrint("F5 Pressed → Refresh In Home Screen");
       _loadHomeData();
+
+      return true;
     }
 
     return false;

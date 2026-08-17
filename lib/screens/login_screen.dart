@@ -7,7 +7,7 @@ import '../widgets/show_toast_message.dart';
 import 'home_screen.dart';
 
 class LoginConstants {
-  static const String apiBaseUrl = 'https://bid.grocerkings.in/api';
+  static const String apiBaseUrl = 'https://bid.funmitra.in/api';
   static const String loginEndpoint = '/login';
   static const String loginUrl = '$apiBaseUrl$loginEndpoint';
   static const int requestTimeout = 30;

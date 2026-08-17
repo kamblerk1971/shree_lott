@@ -16,42 +16,43 @@ class PdfStyleConstants {
   // ── Font sizes ──────────────────────────────────────────────
   // All sizes set to minimum 10pt for thermal printer clarity.
   // Sub-10pt text prints faint/illegible on 58mm thermal paper.
-  static const double brandFontSize       = 12; // was 10
-  static const double legalTextSize       = 11; // was 10
-  static const double tableDataSize       = 11; // was 10
-  static const double tableHeaderSize     = 11; // was 10
-  static const double gridCellFontSize    = 10; // was 8 — minimum readable on thermal
-  static const double reportTitleSize     = 15; // was 14
-  static const double sectionHeaderSize   = 11; // was 10
-  static const double barcodeTextSize     = 11; // was 9
-  static const double footerTextSize      = 11; // was 9
-  static const double accountTitleSize    = 13; // was 12
+  static const double brandFontSize = 12; // was 10
+  static const double legalTextSize = 11; // was 10
+  static const double tableDataSize = 11; // was 10
+  static const double tableHeaderSize = 11; // was 10
+  static const double gridCellFontSize =
+      10; // was 8 — minimum readable on thermal
+  static const double reportTitleSize = 15; // was 14
+  static const double sectionHeaderSize = 11; // was 10
+  static const double barcodeTextSize = 11; // was 9
+  static const double footerTextSize = 11; // was 9
+  static const double accountTitleSize = 13; // was 12
   static const double accountSubtitleSize = 11; // was 10
-  static const double accountDataSize     = 11; // was 10
+  static const double accountDataSize = 11; // was 10
 
   // ── Colors ───────────────────────────────────────────────────
   // Explicit PdfColors.black everywhere.
   // Original grey300/grey400 dividers were near-invisible on thermal paper.
-  static const PdfColor textColor    = PdfColors.black;
+  static const PdfColor textColor = PdfColors.black;
   static const PdfColor dividerColor = PdfColors.black;
-  static const PdfColor headerBg     = PdfColors.grey300;
+  static const PdfColor headerBg = PdfColors.grey300;
 
   // ── Page / margin ────────────────────────────────────────────
   // 58mm roll = 2.25 inch. Original used 2.5 inch — caused right-edge clipping.
-  static const double thermalRollWidth  = 2.5; // inches (58mm)
-  static const double pageMarginH       =  8.0; // horizontal margin
-  static const double pageMarginTop     =  8.0;
-  static const double pageMarginBottom  = 14.0; // extra bottom for auto-cut gap
-  static const double pageMarginCompact =  6.0;
+  static const double thermalRollWidth = 2.5; // inches (58mm)
+  static const double pageMarginH = 8.0; // horizontal margin
+  static const double pageMarginTop = 8.0;
+  static const double pageMarginBottom = 14.0; // extra bottom for auto-cut gap
+  static const double pageMarginCompact = 6.0;
 }
 
 class PdfLayoutConstants {
   // ── Spacing ──────────────────────────────────────────────────
-  static const double spXSmall  =  2;
-  static const double spSmall   =  3;
-  static const double spMedium  =  5;
-  static const double spLarge   =  7;
-  static const double spXLarge  =  9;
+  static const double spXSmall = 2;
+  static const double spSmall = 3;
+  static const double spMedium = 5;
+  static const double spLarge = 7;
+  static const double spXLarge = 9;
   static const double spXXLarge = 14;
 
   // ── Divider ──────────────────────────────────────────────────
@@ -64,15 +65,15 @@ class PdfLayoutConstants {
   // (24+14) × 3 = 114pt — fits with room for cell padding
   static const double colWidthNum = 24;
   static const double colWidthQty = 14;
-  static const int    gridGroups  =  3; // groups of Num+Qty per row
+  static const int gridGroups = 3; // groups of Num+Qty per row
 
   // ── Result grid ──────────────────────────────────────────────
   static const int gridColumnsResultStandard = 10;
-  static const int gridColumnsResultRoll80   =  4;
+  static const int gridColumnsResultRoll80 = 4;
 
   // ── Barcode ──────────────────────────────────────────────────
-  static const double barcodeWidth  = 140;
-  static const double barcodeHeight =  50;
+  static const double barcodeWidth = 140;
+  static const double barcodeHeight = 50;
 }
 
 // =============================================================
@@ -102,7 +103,6 @@ class PointSummaryRow {
 // =============================================================
 
 class TicketPrintService {
-
   // -----------------------------------------------------------
   // SHARED WIDGET HELPERS
   // -----------------------------------------------------------
@@ -128,13 +128,13 @@ class TicketPrintService {
 
   /// Left-label / right-value row, both in explicit black.
   static pw.Widget buildKeyValueRow(
-      String key,
-      String value, {
-        double keyFontSize   = PdfStyleConstants.legalTextSize,
-        double valueFontSize = PdfStyleConstants.legalTextSize,
-        double vPad          = PdfLayoutConstants.spXSmall,
-        bool   valueBold     = true,
-      }) {
+    String key,
+    String value, {
+    double keyFontSize = PdfStyleConstants.legalTextSize,
+    double valueFontSize = PdfStyleConstants.legalTextSize,
+    double vPad = PdfLayoutConstants.spXSmall,
+    bool valueBold = true,
+  }) {
     return pw.Padding(
       padding: pw.EdgeInsets.symmetric(vertical: vPad),
       child: pw.Row(
@@ -162,11 +162,11 @@ class TicketPrintService {
 
   /// Expanded table cell — fills its flex slot, explicit black.
   static pw.Widget buildTableCell(
-      String text, {
-        pw.TextAlign align    = pw.TextAlign.left,
-        bool         bold     = false,
-        double       fontSize = PdfStyleConstants.tableHeaderSize,
-      }) {
+    String text, {
+    pw.TextAlign align = pw.TextAlign.left,
+    bool bold = false,
+    double fontSize = PdfStyleConstants.tableHeaderSize,
+  }) {
     return pw.Expanded(
       child: pw.Text(
         text,
@@ -182,10 +182,10 @@ class TicketPrintService {
 
   /// Centred single-line text, explicit black.
   static pw.Widget buildCenteredText(
-      String text, {
-        double fontSize = PdfStyleConstants.barcodeTextSize,
-        bool   bold     = false,
-      }) {
+    String text, {
+    double fontSize = PdfStyleConstants.barcodeTextSize,
+    bool bold = false,
+  }) {
     return pw.Center(
       child: pw.Text(
         text,
@@ -212,19 +212,18 @@ class TicketPrintService {
   }
 
   static String safeGet(
-      Map<String, dynamic> data,
-      String key, [
-        String fallback = '0',
-      ]) =>
-      (data[key] ?? fallback).toString();
+    Map<String, dynamic> data,
+    String key, [
+    String fallback = '0',
+  ]) => (data[key] ?? fallback).toString();
 
   /// Format "13:45" → "1:45 PM"
   static String _formatTime(String raw) {
-    final parts  = raw.split(':');
-    final h24    = int.tryParse(parts[0]) ?? 0;
-    final min    = parts.length > 1 ? parts[1] : '00';
-    final h12    = h24 % 12 == 0 ? 12 : h24 % 12;
-    final ampm   = h24 >= 12 ? 'PM' : 'AM';
+    final parts = raw.split(':');
+    final h24 = int.tryParse(parts[0]) ?? 0;
+    final min = parts.length > 1 ? parts[1] : '00';
+    final h12 = h24 % 12 == 0 ? 12 : h24 % 12;
+    final ampm = h24 >= 12 ? 'PM' : 'AM';
     return '$h12:$min $ampm';
   }
 
@@ -242,7 +241,7 @@ class TicketPrintService {
 
     if (savedName != null) {
       final all = await Printing.listPrinters();
-      printer   = _matchPrinter(all, savedName);
+      printer = _matchPrinter(all, savedName);
     }
 
     printer ??= await Printing.pickPrinter(context: context);
@@ -255,25 +254,22 @@ class TicketPrintService {
 
   static Printer? _matchPrinter(List<Printer> list, String name) {
     if (list.isEmpty) return null;
-    return list.firstWhere(
-          (p) => p.name == name,
-      orElse: () => list.first,
-    );
+    return list.firstWhere((p) => p.name == name, orElse: () => list.first);
   }
 
-// -----------------------------------------------------------
+  // -----------------------------------------------------------
   // TICKET PRINT — PUBLIC ENTRY POINT
   // -----------------------------------------------------------
 
   static Future<void> printTicket({
-    required BuildContext    context,
-    required Map<String,int> selections,
-    required List<String>    ticketIds,
-    required List<String>    ticketTimes,
-    required List<int>       ticketsAmounts,
-    required String          date,
-    required int             totalQty,
-    required String          userId,
+    required BuildContext context,
+    required Map<String, int> selections,
+    required List<String> ticketIds,
+    required List<String> ticketTimes,
+    required List<int> ticketsAmounts,
+    required String date,
+    required int totalQty,
+    required String userId,
   }) async {
     final printer = await _getPrinter(context);
     if (printer == null) return;
@@ -281,13 +277,16 @@ class TicketPrintService {
     final pdf = pw.Document();
 
     for (int i = 0; i < ticketIds.length; i++) {
-      final ticketId     = 'SL${ticketIds[i]}';
-      final time         = i < ticketTimes.length    ? ticketTimes[i]    : ticketTimes.first;
-      final ticketAmount = i < ticketsAmounts.length ? ticketsAmounts[i] : ticketsAmounts.first;
+      final ticketId = 'SL${ticketIds[i]}';
+      final time = i < ticketTimes.length ? ticketTimes[i] : ticketTimes.first;
+      final ticketAmount = i < ticketsAmounts.length
+          ? ticketsAmounts[i]
+          : ticketsAmounts.first;
 
       // Sort entries once
-      final entries = selections.entries.toList()
-        ..sort((a, b) => a.key.compareTo(b.key));
+      final entries =
+          selections.entries.map((e) => MapEntry(e.key, e.value)).toList()
+            ..sort((a, b) => a.key.compareTo(b.key));
 
       // ── MultiPage: NO header/footer callbacks ─────────────────
       // All content lives in build so it flows naturally across
@@ -307,21 +306,20 @@ class TicketPrintService {
             PdfStyleConstants.pageMarginBottom,
           ),
           build: (_) => [
-
             // ── BRAND ───────────────────────────────────────────
             pw.Text(
               'Shree Lott',
               style: pw.TextStyle(
-                fontSize:   PdfStyleConstants.brandFontSize,
+                fontSize: PdfStyleConstants.brandFontSize,
                 fontWeight: pw.FontWeight.bold,
-                color:      PdfStyleConstants.textColor,
+                color: PdfStyleConstants.textColor,
               ),
             ),
             pw.Text(
               'FOR AMUSEMENT ONLY',
               style: pw.TextStyle(
                 fontSize: PdfStyleConstants.brandFontSize,
-                color:    PdfStyleConstants.textColor,
+                color: PdfStyleConstants.textColor,
               ),
             ),
 
@@ -331,9 +329,9 @@ class TicketPrintService {
 
             // ── METADATA ────────────────────────────────────────
             buildKeyValueRow('Terminal ID', userId),
-            buildKeyValueRow('Draw Date',   date),
-            buildKeyValueRow('Time',        _formatTime(time)),
-            buildKeyValueRow('Ticket ID',   ticketId),
+            buildKeyValueRow('Draw Date', date),
+            buildKeyValueRow('Time', _formatTime(time)),
+            buildKeyValueRow('Ticket ID', ticketId),
 
             sp(PdfLayoutConstants.spSmall),
             buildDivider(),
@@ -358,7 +356,7 @@ class TicketPrintService {
             ),
             buildKeyValueRow(
               'Total Qty',
-              totalQty.toString(),
+              (totalQty).toString(),
               vPad: PdfLayoutConstants.spSmall,
             ),
 
@@ -367,11 +365,11 @@ class TicketPrintService {
             // ── BARCODE ─────────────────────────────────────────
             pw.Center(
               child: pw.BarcodeWidget(
-                barcode:  pw.Barcode.code128(),
-                data:     ticketId,
-                width:    PdfLayoutConstants.barcodeWidth,
-                height:   PdfLayoutConstants.barcodeHeight,
-                color:    PdfStyleConstants.textColor,
+                barcode: pw.Barcode.code128(),
+                data: ticketId,
+                width: PdfLayoutConstants.barcodeWidth,
+                height: PdfLayoutConstants.barcodeHeight,
+                color: PdfStyleConstants.textColor,
                 drawText: false,
               ),
             ),
@@ -381,7 +379,7 @@ class TicketPrintService {
             buildCenteredText(
               ticketId,
               fontSize: PdfStyleConstants.barcodeTextSize,
-              bold:     true,
+              bold: true,
             ),
           ],
         ),
@@ -389,7 +387,7 @@ class TicketPrintService {
     }
 
     await Printing.directPrintPdf(
-      printer:  printer,
+      printer: printer,
       onLayout: (_) async => pdf.save(),
     );
   }
@@ -417,13 +415,13 @@ class TicketPrintService {
     const int g = PdfLayoutConstants.gridGroups; // 3
 
     final hStyle = pw.TextStyle(
-      fontSize:   PdfStyleConstants.gridCellFontSize,
+      fontSize: PdfStyleConstants.gridCellFontSize,
       fontWeight: pw.FontWeight.bold,
-      color:      PdfStyleConstants.textColor,
+      color: PdfStyleConstants.textColor,
     );
     final dStyle = pw.TextStyle(
       fontSize: PdfStyleConstants.gridCellFontSize,
-      color:    PdfStyleConstants.textColor,
+      color: PdfStyleConstants.textColor,
     );
 
     final border = pw.TableBorder.all(
@@ -445,7 +443,7 @@ class TicketPrintService {
       decoration: const pw.BoxDecoration(color: PdfColors.grey300),
       children: List.generate(
         g,
-            (_) => [
+        (_) => [
           _gridCell('Num', hStyle, pw.TextAlign.center),
           _gridCell('Qty', hStyle, pw.TextAlign.center),
         ],
@@ -463,7 +461,7 @@ class TicketPrintService {
           final e = entries[i + c];
           cells
             ..add(_gridCell(e.key.padLeft(4, '0'), dStyle, pw.TextAlign.center))
-            ..add(_gridCell(e.value.toString(),     dStyle, pw.TextAlign.center));
+            ..add(_gridCell(e.value.toString(), dStyle, pw.TextAlign.center));
         } else {
           // Filler keeps the border grid intact on incomplete rows
           cells
@@ -476,79 +474,79 @@ class TicketPrintService {
     }
 
     return pw.Table(
-      border:       border,
+      border: border,
       columnWidths: colWidths,
-      children:     [headerRow, ...dataRows],
+      children: [headerRow, ...dataRows],
     );
   }
 
   /// Single cell in the number grid with consistent inner padding.
   static pw.Widget _gridCell(
-      String       text,
-      pw.TextStyle style,
-      pw.TextAlign align,
-      ) {
+    String text,
+    pw.TextStyle style,
+    pw.TextAlign align,
+  ) {
     return pw.Padding(
       padding: const pw.EdgeInsets.symmetric(horizontal: 2, vertical: 2),
       child: pw.Text(text, style: style, textAlign: align),
     );
   }
+
   // -----------------------------------------------------------
   // POINT SUMMARY REPORT
   // -----------------------------------------------------------
 
   static Future<void> printPointSummaryReport({
-    required BuildContext      context,
-    required String            startDate,
-    required String            endDate,
-    required String            rptDateTime,
-    required String            loginId,
-    required String            name,
-    required String            userName,
+    required BuildContext context,
+    required String startDate,
+    required String endDate,
+    required String rptDateTime,
+    required String loginId,
+    required String name,
+    required String userName,
     required List<ShopReportRow> rows,
-    required double            totalSale,
-    required double            totalCommission,
-    required double            totalWinning,
-    required double            totalNet,
+    required double totalSale,
+    required double totalCommission,
+    required double totalWinning,
+    required double totalNet,
   }) async {
     final printer = await _getPrinter(context);
     if (printer == null) return;
 
     final pdf = _buildPointSummaryPdf(
-      startDate:       startDate,
-      endDate:         endDate,
-      rptDateTime:     rptDateTime,
-      loginId:         loginId,
-      name:            name,
-      userName:        userName,
-      rows:            rows,
-      totalSale:       totalSale,
+      startDate: startDate,
+      endDate: endDate,
+      rptDateTime: rptDateTime,
+      loginId: loginId,
+      name: name,
+      userName: userName,
+      rows: rows,
+      totalSale: totalSale,
       totalCommission: totalCommission,
-      totalWinning:    totalWinning,
-      totalNet:        totalNet,
+      totalWinning: totalWinning,
+      totalNet: totalNet,
     );
 
     await Printing.directPrintPdf(
-      printer:  printer,
+      printer: printer,
       onLayout: (_) async => pdf.save(),
     );
   }
 
   static pw.Document _buildPointSummaryPdf({
-    required String            startDate,
-    required String            endDate,
-    required String            rptDateTime,
-    required String            loginId,
-    required String            name,
-    required String            userName,
+    required String startDate,
+    required String endDate,
+    required String rptDateTime,
+    required String loginId,
+    required String name,
+    required String userName,
     required List<ShopReportRow> rows,
-    required double            totalSale,
-    required double            totalCommission,
-    required double            totalWinning,
-    required double            totalNet,
+    required double totalSale,
+    required double totalCommission,
+    required double totalWinning,
+    required double totalNet,
   }) {
     final pdf = pw.Document();
-
 
     final now = DateTime.now();
 
@@ -570,12 +568,11 @@ class TicketPrintService {
         build: (_) => pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
-
             // ── Header ──────────────────────────────────────
             buildCenteredText(
               'SHREE LOTTO',
               fontSize: PdfStyleConstants.reportTitleSize,
-              bold:     true,
+              bold: true,
             ),
             sp(PdfLayoutConstants.spXSmall),
             buildCenteredText(
@@ -589,34 +586,40 @@ class TicketPrintService {
 
             // ── Metadata ────────────────────────────────────
             buildKeyValueRow(
-              'Start Date', startDate,
-              keyFontSize:   PdfStyleConstants.sectionHeaderSize,
+              'Start Date',
+              startDate,
+              keyFontSize: PdfStyleConstants.sectionHeaderSize,
               valueFontSize: PdfStyleConstants.sectionHeaderSize,
             ),
             buildKeyValueRow(
-              'End Date', endDate,
-              keyFontSize:   PdfStyleConstants.sectionHeaderSize,
+              'End Date',
+              endDate,
+              keyFontSize: PdfStyleConstants.sectionHeaderSize,
               valueFontSize: PdfStyleConstants.sectionHeaderSize,
             ),
             buildKeyValueRow(
-              'Date', rptDate,
+              'Date',
+              rptDate,
               keyFontSize: PdfStyleConstants.sectionHeaderSize,
               valueFontSize: PdfStyleConstants.sectionHeaderSize,
             ),
 
             buildKeyValueRow(
-              'Time', rptTime,
+              'Time',
+              rptTime,
               keyFontSize: PdfStyleConstants.sectionHeaderSize,
               valueFontSize: PdfStyleConstants.sectionHeaderSize,
             ),
             buildKeyValueRow(
-              'Login ID', loginId,
-              keyFontSize:   PdfStyleConstants.sectionHeaderSize,
+              'Login ID',
+              loginId,
+              keyFontSize: PdfStyleConstants.sectionHeaderSize,
               valueFontSize: PdfStyleConstants.sectionHeaderSize,
             ),
             buildKeyValueRow(
-              'User Name', userName,
-              keyFontSize:   PdfStyleConstants.sectionHeaderSize,
+              'User Name',
+              userName,
+              keyFontSize: PdfStyleConstants.sectionHeaderSize,
               valueFontSize: PdfStyleConstants.sectionHeaderSize,
             ),
 
@@ -631,22 +634,22 @@ class TicketPrintService {
             // squeezing 5 columns into a narrow table.
             ...rows.asMap().entries.map((entry) {
               final idx = entry.key;
-              final r   = entry.value;
+              final r = entry.value;
               return pw.Column(
                 crossAxisAlignment: pw.CrossAxisAlignment.start,
                 children: [
-
                   // ── Entry header: row number + date ─────
                   pw.Padding(
                     padding: const pw.EdgeInsets.only(
-                        top: PdfLayoutConstants.spSmall,
-                        bottom: PdfLayoutConstants.spXSmall),
+                      top: PdfLayoutConstants.spSmall,
+                      bottom: PdfLayoutConstants.spXSmall,
+                    ),
                     child: pw.Text(
                       '#${idx + 1}  ${r.date}',
                       style: pw.TextStyle(
-                        fontSize:   PdfStyleConstants.sectionHeaderSize,
+                        fontSize: PdfStyleConstants.sectionHeaderSize,
                         fontWeight: pw.FontWeight.bold,
-                        color:      PdfStyleConstants.textColor,
+                        color: PdfStyleConstants.textColor,
                       ),
                     ),
                   ),
@@ -655,36 +658,36 @@ class TicketPrintService {
                   buildKeyValueRow(
                     'Sale',
                     formatNumber(r.totalLoad, 0),
-                    keyFontSize:   PdfStyleConstants.sectionHeaderSize,
+                    keyFontSize: PdfStyleConstants.sectionHeaderSize,
                     valueFontSize: PdfStyleConstants.sectionHeaderSize,
-                    vPad:          PdfLayoutConstants.spXSmall,
+                    vPad: PdfLayoutConstants.spXSmall,
                   ),
 
                   // ── Commission ──────────────────────────
                   buildKeyValueRow(
                     'Commission',
                     formatNumber(r.commission, 2),
-                    keyFontSize:   PdfStyleConstants.sectionHeaderSize,
+                    keyFontSize: PdfStyleConstants.sectionHeaderSize,
                     valueFontSize: PdfStyleConstants.sectionHeaderSize,
-                    vPad:          PdfLayoutConstants.spXSmall,
+                    vPad: PdfLayoutConstants.spXSmall,
                   ),
 
                   // ── Winning ─────────────────────────────
                   buildKeyValueRow(
                     'Winning',
                     formatNumber(r.winning, 0),
-                    keyFontSize:   PdfStyleConstants.sectionHeaderSize,
+                    keyFontSize: PdfStyleConstants.sectionHeaderSize,
                     valueFontSize: PdfStyleConstants.sectionHeaderSize,
-                    vPad:          PdfLayoutConstants.spXSmall,
+                    vPad: PdfLayoutConstants.spXSmall,
                   ),
 
                   // ── Net / End Point ──────────────────────
                   buildKeyValueRow(
                     'End Point',
                     formatNumber(r.endPoint, 2),
-                    keyFontSize:   PdfStyleConstants.sectionHeaderSize,
+                    keyFontSize: PdfStyleConstants.sectionHeaderSize,
                     valueFontSize: PdfStyleConstants.sectionHeaderSize,
-                    vPad:          PdfLayoutConstants.spXSmall,
+                    vPad: PdfLayoutConstants.spXSmall,
                   ),
 
                   sp(PdfLayoutConstants.spSmall),
@@ -699,33 +702,33 @@ class TicketPrintService {
             pw.Text(
               'Total',
               style: pw.TextStyle(
-                fontSize:   PdfStyleConstants.sectionHeaderSize,
+                fontSize: PdfStyleConstants.sectionHeaderSize,
                 fontWeight: pw.FontWeight.bold,
-                color:      PdfStyleConstants.textColor,
+                color: PdfStyleConstants.textColor,
               ),
             ),
             buildKeyValueRow(
               'Sale',
               formatNumber(totalSale, 0),
-              keyFontSize:   PdfStyleConstants.sectionHeaderSize,
+              keyFontSize: PdfStyleConstants.sectionHeaderSize,
               valueFontSize: PdfStyleConstants.sectionHeaderSize,
             ),
             buildKeyValueRow(
               'Commission',
               formatNumber(totalCommission, 2),
-              keyFontSize:   PdfStyleConstants.sectionHeaderSize,
+              keyFontSize: PdfStyleConstants.sectionHeaderSize,
               valueFontSize: PdfStyleConstants.sectionHeaderSize,
             ),
             buildKeyValueRow(
               'Winning',
               formatNumber(totalWinning, 0),
-              keyFontSize:   PdfStyleConstants.sectionHeaderSize,
+              keyFontSize: PdfStyleConstants.sectionHeaderSize,
               valueFontSize: PdfStyleConstants.sectionHeaderSize,
             ),
             buildKeyValueRow(
               'End Point',
               formatNumber(totalNet, 2),
-              keyFontSize:   PdfStyleConstants.sectionHeaderSize,
+              keyFontSize: PdfStyleConstants.sectionHeaderSize,
               valueFontSize: PdfStyleConstants.sectionHeaderSize,
             ),
 
@@ -734,7 +737,7 @@ class TicketPrintService {
             buildCenteredText(
               '*** THANK YOU ***',
               fontSize: PdfStyleConstants.footerTextSize,
-              bold:     true,
+              bold: true,
             ),
           ],
         ),
@@ -749,19 +752,19 @@ class TicketPrintService {
   // -----------------------------------------------------------
 
   static Future<void> printAccountSummary(
-      BuildContext context,
-      Map<String,dynamic> data,
-      ) async {
+    BuildContext context,
+    Map<String, dynamic> data,
+  ) async {
     final printer = await _getPrinter(context);
     if (printer == null) return;
 
     await Printing.directPrintPdf(
-      printer:  printer,
+      printer: printer,
       onLayout: (_) async => _buildAccountSummary(data).save(),
     );
   }
 
-  static pw.Document _buildAccountSummary(Map<String,dynamic> data) {
+  static pw.Document _buildAccountSummary(Map<String, dynamic> data) {
     final pdf = pw.Document();
     final now = DateTime.now();
     final dateStr = DateFormat('dd-MM-yyyy').format(now);
@@ -777,20 +780,19 @@ class TicketPrintService {
         build: (_) => pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
-
             pw.Text(
               'Shree Lott',
               style: pw.TextStyle(
-                fontSize:   PdfStyleConstants.accountTitleSize,
+                fontSize: PdfStyleConstants.accountTitleSize,
                 fontWeight: pw.FontWeight.bold,
-                color:      PdfStyleConstants.textColor,
+                color: PdfStyleConstants.textColor,
               ),
             ),
             pw.Text(
               'Statement',
               style: pw.TextStyle(
                 fontSize: PdfStyleConstants.accountSubtitleSize,
-                color:    PdfStyleConstants.textColor,
+                color: PdfStyleConstants.textColor,
               ),
             ),
 
@@ -798,12 +800,12 @@ class TicketPrintService {
             buildDivider(),
             sp(PdfLayoutConstants.spMedium),
 
-            _acctRow('Date',             dateStr),
-            _acctRow('Time',             timeStr),
-            _acctRow('Sale',             safeGet(data, 'todaySale')),
-            _acctRow('Winning Amount',   safeGet(data, 'todayWinning')),
-            _acctRow('Commission',       safeGet(data, 'todayCommission')),
-            _acctRow('Settlement',       safeGet(data, 'settlement')),
+            _acctRow('Date', dateStr),
+            _acctRow('Time', timeStr),
+            _acctRow('Sale', safeGet(data, 'todaySale')),
+            _acctRow('Winning Amount', safeGet(data, 'todayWinning')),
+            _acctRow('Commission', safeGet(data, 'todayCommission')),
+            _acctRow('Settlement', safeGet(data, 'settlement')),
           ],
         ),
       ),
@@ -815,19 +817,26 @@ class TicketPrintService {
   static pw.Widget _acctRow(String label, String value) {
     return pw.Padding(
       padding: const pw.EdgeInsets.symmetric(
-          vertical: PdfLayoutConstants.spXSmall),
+        vertical: PdfLayoutConstants.spXSmall,
+      ),
       child: pw.Row(
         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
         children: [
-          pw.Text(label,
-              style: pw.TextStyle(
-                  fontSize: PdfStyleConstants.accountDataSize,
-                  color: PdfStyleConstants.textColor)),
-          pw.Text(value,
-              style: pw.TextStyle(
-                  fontSize:   PdfStyleConstants.accountDataSize,
-                  fontWeight: pw.FontWeight.bold,
-                  color:      PdfStyleConstants.textColor)),
+          pw.Text(
+            label,
+            style: pw.TextStyle(
+              fontSize: PdfStyleConstants.accountDataSize,
+              color: PdfStyleConstants.textColor,
+            ),
+          ),
+          pw.Text(
+            value,
+            style: pw.TextStyle(
+              fontSize: PdfStyleConstants.accountDataSize,
+              fontWeight: pw.FontWeight.bold,
+              color: PdfStyleConstants.textColor,
+            ),
+          ),
         ],
       ),
     );
@@ -838,31 +847,33 @@ class TicketPrintService {
   // -----------------------------------------------------------
 
   static Future<void> printResult(
-      BuildContext       context,
-      List<ResultItem>   resultItems,
-      PdfPageFormat      format,
-      String             drawDate,
-      String             drawTime,
-      ) async {
+    BuildContext context,
+    List<ResultItem> resultItems,
+    PdfPageFormat format,
+    String drawDate,
+    String drawTime,
+  ) async {
     final printer = await _getPrinter(context);
     if (printer == null) return;
 
     await Printing.directPrintPdf(
-      printer:  printer,
-      onLayout: (_) async =>
-          _buildPrintResult(resultItems, drawDate, drawTime,
-              pageFormat: format)
-              .save(),
+      printer: printer,
+      onLayout: (_) async => _buildPrintResult(
+        resultItems,
+        drawDate,
+        drawTime,
+        pageFormat: format,
+      ).save(),
     );
   }
 
   static pw.Document _buildPrintResult(
-      List<ResultItem> resultItems,
-      String           drawDate,
-      String           drawTime, {
-        required PdfPageFormat pageFormat,
-      }) {
-    final pdf      = pw.Document();
+    List<ResultItem> resultItems,
+    String drawDate,
+    String drawTime, {
+    required PdfPageFormat pageFormat,
+  }) {
+    final pdf = pw.Document();
     final isRoll80 = pageFormat == PdfPageFormat.roll80;
 
     final itemsPerRow = isRoll80
@@ -876,10 +887,9 @@ class TicketPrintService {
     // Chunk into rows of itemsPerRow
     final List<List<String>> chunked = [];
     for (int i = 0; i < numbers.length; i += itemsPerRow) {
-      chunked.add(numbers.sublist(
-        i,
-        (i + itemsPerRow).clamp(0, numbers.length),
-      ));
+      chunked.add(
+        numbers.sublist(i, (i + itemsPerRow).clamp(0, numbers.length)),
+      );
     }
 
     pdf.addPage(
@@ -897,35 +907,38 @@ class TicketPrintService {
         build: (_) => pw.Column(
           crossAxisAlignment: pw.CrossAxisAlignment.start,
           children: [
-
             // ── Header ──────────────────────────────────────
             pw.Text(
               'SHREE LOTTO',
               style: pw.TextStyle(
-                fontSize:   isRoll80 ? 12.0 : 15.0, // was 11/14 — bumped for thermal
+                fontSize: isRoll80 ? 12.0 : 15.0,
+                // was 11/14 — bumped for thermal
                 fontWeight: pw.FontWeight.bold,
-                color:      PdfStyleConstants.textColor,
+                color: PdfStyleConstants.textColor,
               ),
             ),
             pw.Text(
               'Result',
               style: pw.TextStyle(
-                fontSize: isRoll80 ? 11.0 : 13.0, // was 9/12 — bumped for thermal
-                color:    PdfStyleConstants.textColor,
+                fontSize: isRoll80 ? 11.0 : 13.0,
+                // was 9/12 — bumped for thermal
+                color: PdfStyleConstants.textColor,
               ),
             ),
             sp(PdfLayoutConstants.spXSmall),
             pw.Text(
               'Draw Date : $drawDate',
               style: pw.TextStyle(
-                  fontSize: 11.0, // was 9.0 — bumped for thermal
-                  color: PdfStyleConstants.textColor),
+                fontSize: 11.0, // was 9.0 — bumped for thermal
+                color: PdfStyleConstants.textColor,
+              ),
             ),
             pw.Text(
               'Draw Time : $drawTime',
               style: pw.TextStyle(
-                  fontSize: 11.0, // was 9.0 — bumped for thermal
-                  color: PdfStyleConstants.textColor),
+                fontSize: 11.0, // was 9.0 — bumped for thermal
+                color: PdfStyleConstants.textColor,
+              ),
             ),
 
             sp(PdfLayoutConstants.spLarge),
@@ -933,25 +946,33 @@ class TicketPrintService {
             sp(PdfLayoutConstants.spLarge),
 
             // ── Result grid ─────────────────────────────────
-            ...chunked.map((row) => pw.Padding(
-              padding: const pw.EdgeInsets.symmetric(
-                  vertical: PdfLayoutConstants.spSmall),
-              child: pw.Row(
-                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-                children: row.map((num) => pw.Expanded(
-                  child: pw.Center(
-                    child: pw.Text(
-                      num,
-                      style: pw.TextStyle(
-                        fontSize:   isRoll80 ? 11.0 : 13.0, // was 10/12 — bumped for thermal
-                        fontWeight: pw.FontWeight.bold,
-                        color:      PdfStyleConstants.textColor,
-                      ),
-                    ),
-                  ),
-                )).toList(),
+            ...chunked.map(
+              (row) => pw.Padding(
+                padding: const pw.EdgeInsets.symmetric(
+                  vertical: PdfLayoutConstants.spSmall,
+                ),
+                child: pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                  children: row
+                      .map(
+                        (num) => pw.Expanded(
+                          child: pw.Center(
+                            child: pw.Text(
+                              num,
+                              style: pw.TextStyle(
+                                fontSize: isRoll80 ? 11.0 : 13.0,
+                                // was 10/12 — bumped for thermal
+                                fontWeight: pw.FontWeight.bold,
+                                color: PdfStyleConstants.textColor,
+                              ),
+                            ),
+                          ),
+                        ),
+                      )
+                      .toList(),
+                ),
               ),
-            )),
+            ),
 
             sp(PdfLayoutConstants.spXXLarge),
             buildDivider(),
@@ -959,8 +980,9 @@ class TicketPrintService {
 
             buildCenteredText(
               '*** THANK YOU ***',
-              fontSize: isRoll80 ? 11.0 : 13.0, // was 9/12 — bumped for thermal
-              bold:     true,
+              fontSize: isRoll80 ? 11.0 : 13.0,
+              // was 9/12 — bumped for thermal
+              bold: true,
             ),
           ],
         ),

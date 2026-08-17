@@ -5,7 +5,19 @@ void showInfoDialog({
   required BuildContext context,
   required String title,
   required String subtitle,
-}) {
+}) async {
+  if (!context.mounted) return;
+
+  final navigator = Navigator.of(context, rootNavigator: true);
+
+  // Try closing any existing dialog safely
+  if (navigator.canPop()) {
+    navigator.pop();
+    await Future.delayed(const Duration(milliseconds: 80));
+  }
+
+  if (!context.mounted) return;
+
   showDialog(
     context: context,
     barrierDismissible: true,
@@ -33,7 +45,6 @@ void showInfoDialog({
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // 🔥 Gold Header
             Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(vertical: 16),
@@ -45,7 +56,8 @@ void showInfoDialog({
                     Color(0xFFD4A054),
                   ],
                 ),
-                borderRadius: BorderRadius.vertical(top: Radius.circular(12)),
+                borderRadius:
+                BorderRadius.vertical(top: Radius.circular(12)),
               ),
               child: const Column(
                 children: [
@@ -67,24 +79,10 @@ void showInfoDialog({
                 ],
               ),
             ),
-
             Padding(
               padding: const EdgeInsets.all(22),
               child: Column(
                 children: [
-                  // // 🔹 Title
-                  // Text(
-                  //   title,
-                  //   textAlign: TextAlign.center,
-                  //   style: const TextStyle(
-                  //     color: Color(0xFFEAB676),
-                  //     fontSize: 18,
-                  //     fontWeight: FontWeight.w800,
-                  //   ),
-                  // ),
-                  // const SizedBox(height: 10),
-
-                  // 🔹 Subtitle
                   Text(
                     subtitle,
                     textAlign: TextAlign.center,
@@ -94,42 +92,18 @@ void showInfoDialog({
                       height: 1.5,
                     ),
                   ),
-
                   const SizedBox(height: 24),
-
-                  // 🔹 Close Button
                   ModernBtn(
                     text: "Okay",
                     bgColor: const Color(0xFFEAB676),
                     width: 400,
                     height: 40,
                     onTap: () {
-                      Navigator.pop(context);
+                      if (navigator.canPop()) {
+                        navigator.pop();
+                      }
                     },
                   ),
-                  // SizedBox(
-                  //   width: double.infinity,
-                  //   child: ElevatedButton(
-                  //     onPressed: () => Navigator.pop(context),
-                  //     style: ElevatedButton.styleFrom(
-                  //       backgroundColor: const Color(0xFFEAB676),
-                  //       foregroundColor: Colors.white,
-                  //       padding: const EdgeInsets.symmetric(vertical: 14),
-                  //       shape: RoundedRectangleBorder(
-                  //         borderRadius: BorderRadius.circular(8),
-                  //       ),
-                  //       elevation: 0,
-                  //     ),
-                  //     child: const Text(
-                  //       "OK",
-                  //       style: TextStyle(
-                  //         fontSize: 13,
-                  //         fontWeight: FontWeight.w700,
-                  //         letterSpacing: 1.5,
-                  //       ),
-                  //     ),
-                  //   ),
-                  // ),
                 ],
               ),
             ),

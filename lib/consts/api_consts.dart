@@ -1,5 +1,5 @@
 class ApiConstants {
-  static const String baseUrl = "https://bid.grocerkings.in/api";
+  static const String baseUrl = "https://bid.funmitra.in/api";
 
   // Endpoints
   static const String timer = "/get-timer";

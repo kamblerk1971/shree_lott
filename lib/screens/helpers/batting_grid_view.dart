@@ -587,10 +587,13 @@ class BettingGridModel {
 
   /// Returns the cost per single unit for number [n] based on the current mode.
   double _costPerCell(int n) {
-    if (high) {
+    if (true) {
       final int rangeIndex = (n % 1000) ~/ 100;
-      final int multiplier = _rangeMultipliers[rangeIndex];
-      return 2.0 * multiplier;
+      final double multiplier = (selectedPoint / 2);
+      // final double value = multiplier * n;
+
+      print(multiplier);
+      return multiplier;
     } else {
       return selectedPoint;
     }
@@ -908,11 +911,13 @@ class BettingGridController {
 
         if (index < 0 || index >= multipliers.length) continue;
 
-        final int multiplier = multipliers[index];
+        int multiplier = (model.selectedPoint / 2).toInt();
+        print(multiplier);
 
         // 🔥 Multiply QTY first
         final int finalQty = qty * multiplier;
 
+        print(finalQty);
         totalQty += finalQty;
 
         // Base cost in HIGH mode is always 2
@@ -922,7 +927,10 @@ class BettingGridController {
 
         if (row != null && seriesIndex != row) continue;
 
-        totalQty += qty;
+        /// Selected point /2=qty multiplier
+        // Total qty =played qty*qty multiplier
+        final int multiplier = model.selectedPoint ~/ 2;
+        totalQty += qty * multiplier;
         totalAmount += qty * model.selectedPoint;
       }
     }
@@ -1517,11 +1525,11 @@ class BettingGridController {
   ) async {
     final now = DateTime.now();
 
-    // ================= SLOT VALIDATION FIRST =================
+    debugPrint(
+      "🟦 handlePrint() CALLED → userId: $userId, slot: $slot, slots: $slots",
+    );
 
-    // if (slot.isEmpty && slots.isEmpty) {
-    //   return {"success": false, "failedAt": "slot_missing"};
-    // }
+    // ================= SLOT VALIDATION FIRST =================
 
     DateTime parseSlotTime(String slot) {
       final parts = slot.trim().split(' ');
@@ -1535,11 +1543,14 @@ class BettingGridController {
       if (period == "PM" && hour != 12) hour += 12;
       if (period == "AM" && hour == 12) hour = 0;
 
+      debugPrint(
+        "🕒 parseSlotTime('$slot') → hour=$hour, minute=$minute, period=$period",
+      );
+
       return DateTime(now.year, now.month, now.day, hour, minute);
     }
 
     final DateTime gameStart = DateTime(now.year, now.month, now.day, 9, 45);
-
     final DateTime gameEnd = DateTime(now.year, now.month, now.day, 21, 30);
 
     // ================= SLOT VALIDATION WITH DEBUG =================
@@ -1590,7 +1601,7 @@ class BettingGridController {
 
       debugPrint("✅ All Advanced Slots Valid");
     } else {
-      debugPrint("Mode → SINGLE SLOT : ${slot} data ");
+      debugPrint("Mode → SINGLE SLOT : $slot data ");
 
       final slotTime = parseSlotTime(slot);
 
@@ -1628,7 +1639,10 @@ class BettingGridController {
       advancedSlots: slots.isNotEmpty ? slots : null,
     );
 
+    debugPrint("📦 Payload built → $payload");
+
     if (!payload.containsKey("all_datas2")) {
+      debugPrint("❌ FAILED → payload missing 'all_datas2' key");
       return {"success": false, "failedAt": "invalid_payload"};
     }
 
@@ -1636,15 +1650,24 @@ class BettingGridController {
       jsonDecode(payload["all_datas2"]),
     );
 
+    debugPrint("📦 Decoded all_datas2 → $decoded");
+
     final bool hasAnyValue = decoded.values.any(
       (v) => int.tryParse(v.toString()) != null && int.parse(v.toString()) > 0,
     );
 
+    debugPrint("🔎 hasAnyValue → $hasAnyValue");
+
     if (!hasAnyValue) {
+      debugPrint(
+        "❌ FAILED → empty_selection (no positive values in decoded payload)",
+      );
       return {"success": false, "failedAt": "empty_selection"};
     }
 
     // ================= LOADING DIALOG =================
+
+    debugPrint("⏳ Showing 'Printing ticket...' dialog");
 
     Get.dialog(
       Dialog(
@@ -1683,11 +1706,16 @@ class BettingGridController {
 
     try {
       final token = await _getToken();
+      debugPrint(
+        "🔑 Token fetched → ${token != null ? 'present (len=${token.length})' : 'NULL'}",
+      );
 
       final request = http.MultipartRequest(
         'POST',
         Uri.parse('${ApiConstants.baseUrl}/place-bid'),
       );
+
+      debugPrint("🌐 Request URL → ${ApiConstants.baseUrl}/place-bid");
 
       request.headers['Authorization'] = 'Bearer $token';
 
@@ -1695,18 +1723,36 @@ class BettingGridController {
         request.fields[key] = value.toString();
       });
 
+      debugPrint("📤 Request fields → ${request.fields}");
+
+      print("request : $request");
       final streamedResponse = await request.send();
+      print("streamedResponse : $streamedResponse");
+
+      debugPrint(
+        "📨 Streamed response status → ${streamedResponse.statusCode}",
+      );
+
       final response = await http.Response.fromStream(streamedResponse);
 
+      print("response from backend ");
       print(response.body);
+
+      debugPrint("📨 Full response body → ${response.body}");
+
       if (response.statusCode != 200) {
+        debugPrint(
+          "❌ FAILED → server_error, statusCode=${response.statusCode}",
+        );
         Get.back();
         return {"success": false, "failedAt": "server_error"};
       }
 
       final apiJson = jsonDecode(response.body);
+      debugPrint("📨 Parsed apiJson → $apiJson");
 
       if (apiJson['status'] != true) {
+        debugPrint("❌ FAILED → api_rejected, message=${apiJson["message"]}");
         Get.back();
         return {
           "success": false,
@@ -1716,6 +1762,7 @@ class BettingGridController {
       }
 
       final data = apiJson['data'];
+      debugPrint("📦 apiJson['data'] → $data");
 
       // ================= TICKET IDS =================
 
@@ -1725,6 +1772,8 @@ class BettingGridController {
             .map((e) => e.toString())
             .toList();
       }
+
+      debugPrint("🎫 ticketIds → $ticketIds");
 
       // ================= TICKET TIMES =================
 
@@ -1740,10 +1789,13 @@ class BettingGridController {
           } else {
             ticketTimes = [data['walate2'].toString()];
           }
-        } catch (_) {
+        } catch (e) {
+          debugPrint("⚠️ walate2 decode exception → $e");
           ticketTimes = [data['walate2'].toString()];
         }
       }
+
+      debugPrint("⏰ ticketTimes (before fallback) → $ticketTimes");
 
       if (ticketTimes.isEmpty) {
         final fallbackTime =
@@ -1754,6 +1806,8 @@ class BettingGridController {
           ticketIds.isNotEmpty ? ticketIds.length : 1,
           fallbackTime,
         );
+
+        debugPrint("⏰ ticketTimes (fallback applied) → $ticketTimes");
       }
 
       // ================= BUILD SELECTIONS =================
@@ -1763,6 +1817,9 @@ class BettingGridController {
       int totalAmount = 0;
 
       final int point = model.selectedPoint.toInt();
+      debugPrint(
+        "🎯 model.selectedPoint (point) → $point, model.high → ${model.high}",
+      );
 
       const List<int> multipliers = [1, 1, 2, 3, 5, 5, 10, 20, 25, 25];
 
@@ -1790,24 +1847,36 @@ class BettingGridController {
           qty = amount ~/ point;
         }
 
+        debugPrint(
+          "🔢 key=$key → fullNumber=$fullNumber, amount=$amount, qty=$qty",
+        );
+
         if (qty > 0) {
-          int finalQty = qty;
+          int finalQty;
 
           if (model.high) {
-            final int index = int.parse(fullNumber[1]);
-            if (index >= 0 && index < multipliers.length) {
-              finalQty = qty * multipliers[index];
-            }
+            finalQty = qty * (point ~/ 2);
+          } else {
+            finalQty = qty * (point ~/ 2);
           }
 
           selections[fullNumber] = finalQty;
-
           totalQty += finalQty;
           totalAmount += amount;
+
+          debugPrint(
+            "   ↳ finalQty=$finalQty, runningTotalQty=$totalQty, runningTotalAmount=$totalAmount",
+          );
         }
       });
 
+      debugPrint("📋 Final selections map → $selections");
+      debugPrint("📋 totalQty=$totalQty, totalAmount=$totalAmount");
+
       if (selections.isEmpty) {
+        debugPrint(
+          "❌ FAILED → no_selection (selections map empty after processing)",
+        );
         Get.back();
         return {"success": false, "failedAt": "no_selection"};
       }
@@ -1816,9 +1885,15 @@ class BettingGridController {
           ? List.generate(ticketIds.length, (_) => totalAmount)
           : [totalAmount];
 
+      debugPrint("💰 ticketAmounts → $ticketAmounts");
+
       // ================= PRINT ONE BY ONE (ADVANCED SAFE) =================
 
       for (int i = 0; i < ticketIds.length; i++) {
+        debugPrint(
+          "🖨️ Printing ticket #$i → id=${ticketIds[i]}, time=${i < ticketTimes.length ? ticketTimes[i] : ticketTimes.first}, amount=${ticketAmounts[i]}",
+        );
+
         await TicketPrintService.printTicket(
           context: context,
           selections: selections,
@@ -1834,6 +1909,8 @@ class BettingGridController {
           ticketsAmounts: [ticketAmounts[i]],
           userId: userId,
         );
+
+        debugPrint("✅ Ticket #$i printed successfully");
       }
 
       model.clearAllControllers();
@@ -1841,8 +1918,13 @@ class BettingGridController {
 
       Get.back();
 
+      debugPrint("✅ handlePrint() COMPLETE → success");
+
       return {"success": true};
-    } catch (e) {
+    } catch (e, st) {
+      debugPrint("💥 EXCEPTION in handlePrint() → $e");
+      debugPrint("💥 StackTrace → $st");
+
       if (Get.isDialogOpen ?? false) {
         Get.back();
       }
@@ -1982,122 +2064,149 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
 
   // ─── State variables (declare in your State class) ───────────
 
-  DateTime? _lastKeyTime;
-  int _lastInterKeyGapMs = 0;
+  bool _isPrinting = false;
+  DateTime? _f5Cooldown;
+  DateTime? _f6Cooldown;
+  DateTime? _f7Cooldown;
+
+  static const Duration _cooldownDuration = Duration(seconds: 5);
 
   bool _handleKey(KeyEvent e) {
-    // if (e is! KeyDownEvent) return false;
+    if (e is! KeyDownEvent) return false;
+    if (e is KeyRepeatEvent) return true;
 
     final key = e.logicalKey;
 
+    // 🔒 BLOCK ALL FUNCTION KEYS DURING PRINT
+    if (_isPrinting &&
+        (key == LogicalKeyboardKey.f5 ||
+            key == LogicalKeyboardKey.f6 ||
+            key == LogicalKeyboardKey.f7)) {
+      debugPrint("Blocked ${key.keyLabel} → Printing in progress");
+      return true;
+    }
+
+    final now = DateTime.now();
+
+    bool isCoolingDown(DateTime? lastPress) {
+      if (lastPress == null) return false;
+      return now.difference(lastPress) < _cooldownDuration;
+    }
+
     // F6 → Print
     if (key == LogicalKeyboardKey.f6) {
+      if (isCoolingDown(_f6Cooldown)) return true;
+
+      _f6Cooldown = now;
       _handlePrintFromKey();
       return true;
     }
 
     // F7 → Clear
     if (key == LogicalKeyboardKey.f7) {
+      if (isCoolingDown(_f7Cooldown)) return true;
+
+      _f7Cooldown = now;
       controller.model.clear(slots);
+      if (mounted) setState(() {});
       return true;
     }
 
-    // F5 → Refresh & Clear
+    // F5 → Refresh
     if (key == LogicalKeyboardKey.f5) {
+      if (isCoolingDown(_f5Cooldown)) return true;
+
+      _f5Cooldown = now;
       controller.model.clear(slots, isRefreshing: true);
       refreshController.refreshingData();
       return true;
     }
 
-    return false; // allow other keys normally
+    return false;
   }
 
   Future<void> _handlePrintFromKey() async {
-    final result = await controller.handlePrint(
-      context,
-      widget.slot,
-      slots,
-      widget.id,
-    );
+    if (_isPrinting) return;
 
-    if (result["success"] == true) {
-      return;
+    _isPrinting = true;
+
+    try {
+      final result = await controller.handlePrint(
+        context,
+        widget.slot,
+        slots,
+        widget.id,
+      );
+
+      if (!mounted) return;
+
+      if (result["success"] == true) return;
+
+      final failedAt = result["failedAt"]?.toString().trim().isNotEmpty == true
+          ? result["failedAt"].toString()
+          : "unknown";
+
+      switch (failedAt) {
+        case "game_not_started":
+          _showError(
+            "Game Not Started",
+            "Game will start at 09:45 AM. Please wait.",
+          );
+          break;
+
+        case "game_closed":
+          _showError(
+            "Game Closed",
+            "Today's game time is over. Please come tomorrow.",
+          );
+          break;
+
+        case "slot_missing":
+          _showError("Slot Required", "Please select a draw time slot.");
+          break;
+
+        case "empty_selection":
+          _showError("No Quantity", "Enter quantity for at least one number.");
+          break;
+
+        case "no_selection":
+          _showError("No Numbers", "No valid numbers selected.");
+          break;
+
+        case "server_error":
+          _showError(
+            "Server Error",
+            "Server error occurred. Please try again.",
+          );
+          break;
+
+        case "api_rejected":
+          _showError(
+            "Request Failed",
+            result["message"]?.toString() ??
+                "Request rejected. Please try again.",
+          );
+          break;
+
+        default:
+          _showError("Error", "Unknown error occurred.");
+      }
+    } catch (e) {
+      if (mounted) {
+        _showError(
+          "Unexpected Error",
+          "Something went wrong. Please try again.",
+        );
+      }
+    } finally {
+      _isPrinting = false;
     }
+  }
 
-    final failedAt = result["failedAt"];
+  void _showError(String title, String subtitle) {
+    if (!mounted) return;
 
-    switch (failedAt) {
-      case "game_not_started":
-        showInfoDialog(
-          context: context,
-          title: "Game Not Started",
-          subtitle: "Game will start at 09:45 AM. Please wait.",
-        );
-        break;
-
-      case "game_closed":
-        showInfoDialog(
-          context: context,
-          title: "Game Closed",
-          subtitle: "Today's game time is over. Please come tomorrow.",
-        );
-        break;
-
-      case "slot_missing":
-        showInfoDialog(
-          context: context,
-          title: "Slot Required",
-          subtitle: "Please select a draw time slot.",
-        );
-        break;
-
-      case "empty_selection":
-        showInfoDialog(
-          context: context,
-          title: "No Quantity",
-          subtitle: "Enter quantity for at least one number.",
-        );
-        break;
-
-      case "no_selection":
-        showInfoDialog(
-          context: context,
-          title: "No Numbers",
-          subtitle: "No valid numbers selected.",
-        );
-        break;
-
-      case "server_error":
-        showInfoDialog(
-          context: context,
-          title: "Server Error",
-          subtitle: "Server error occurred. Please try again.",
-        );
-        break;
-
-      case "api_rejected":
-        showInfoDialog(
-          context: context,
-          title: "Request Failed",
-          subtitle: result["message"],
-        );
-        break;
-
-      case "exception":
-        showInfoDialog(
-          context: context,
-          title: "Unexpected Error",
-          subtitle: "Something went wrong. Please try again.",
-        );
-        break;
-
-      default:
-        showInfoDialog(
-          context: context,
-          title: "Error",
-          subtitle: "Unknown error occurred.",
-        );
-    }
+    showInfoDialog(context: context, title: title, subtitle: subtitle);
   }
 
   @override
@@ -3196,7 +3305,6 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
           }
 
           final n = controller.model.visibleStart + index;
-
           return _cell(n);
         }),
         SizedBox(width: 6),
@@ -3207,13 +3315,313 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
       ],
     );
   }
-// ─────────────────────────────────────────────────────────────────────────
+
+  // ─────────────────────────────────────────────────────────────────────────
   // Per-cell onChanged timestamp tracking.
   // Key: cell number (n). Value: time of last onChanged call for that cell.
   // Used to compute inter-change gap entirely inside onChanged —
   // no dependency on onKeyEvent, works even when scanner bypasses key events.
   // ─────────────────────────────────────────────────────────────────────────
   final Map<int, DateTime> _lastChangedTime = {};
+
+  // Widget _cell(int n) {
+  //   final ctrl = controller.model._getCtrl(
+  //     controller.model.selectedSeries,
+  //     controller.model.selectedRange,
+  //     n,
+  //   );
+  //
+  //   final focusNode = _getFocusNode(n);
+  //
+  //   focusNode.onKeyEvent = (node, event) {
+  //     if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+  //       return KeyEventResult.ignored;
+  //     }
+  //
+  //     final DateTime keyEventTime = DateTime.now();
+  //     final key = event.logicalKey;
+  //     final keyLabel = key.keyLabel;
+  //
+  //     // ─────────────────────────────────────────────────────
+  //     // 🚫 BLOCK: Scanner already confirmed
+  //     // ─────────────────────────────────────────────────────
+  //     if (_isScannerInput) {
+  //       debugPrint(
+  //         "[onKeyEvent][${keyEventTime.toIso8601String()}] "
+  //         "BLOCKED scanner active | key='$keyLabel' | cell=$n",
+  //       );
+  //       return KeyEventResult.handled;
+  //     }
+  //
+  //     // ─────────────────────────────────────────────────────
+  //     // ✅ Navigation
+  //     // ─────────────────────────────────────────────────────
+  //     final int start = controller.model.visibleStart;
+  //     final int currentIndex = n - start;
+  //     int newIndex = currentIndex;
+  //
+  //     switch (key) {
+  //       case LogicalKeyboardKey.arrowRight:
+  //         newIndex++;
+  //         break;
+  //       case LogicalKeyboardKey.arrowLeft:
+  //         newIndex--;
+  //         break;
+  //       case LogicalKeyboardKey.arrowDown:
+  //         newIndex += _colCount;
+  //         break;
+  //       case LogicalKeyboardKey.arrowUp:
+  //         newIndex -= _colCount;
+  //         break;
+  //       case LogicalKeyboardKey.enter:
+  //         if (_isScannerInput || scanBuffer.isNotEmpty) {
+  //           return KeyEventResult.handled;
+  //         }
+  //         newIndex += _colCount;
+  //         break;
+  //       default:
+  //         return KeyEventResult.ignored;
+  //     }
+  //
+  //     if (newIndex < 0 || newIndex >= _totalNumbers) {
+  //       return KeyEventResult.handled;
+  //     }
+  //
+  //     _cellFocusNodes[start + newIndex]?.requestFocus();
+  //     return KeyEventResult.handled;
+  //   };
+  //
+  //   focusNode.removeListener(_rebuildOnFocus);
+  //   focusNode.addListener(_rebuildOnFocus);
+  //
+  //   final bool hasValue = ctrl.text.isNotEmpty;
+  //   final bool isFocused = focusNode.hasFocus;
+  //   final bool isBlocked = _isScannerInput;
+  //
+  //   final Color cellColor = controller.model.isFPChecked && hasValue
+  //       ? Colors.yellow.shade300
+  //       : isFocused
+  //       ? Colors.green.shade200
+  //       : Colors.white;
+  //
+  //   return GestureDetector(
+  //     onTap: () {
+  //       debugPrint("[onTap] cell=$n | isBlocked=$isBlocked");
+  //
+  //       if (isBlocked) {
+  //         _isScannerInput = false;
+  //         scanBuffer = "";
+  //         _lastChangedTime.remove(n); // clear timing for this cell
+  //         debugPrint("[onTap] cell=$n | unlocked");
+  //       }
+  //
+  //       focusNode.requestFocus();
+  //       setState(() {});
+  //     },
+  //     child: SizedBox(
+  //       width: BettingGridModel.cellW,
+  //       height: BettingGridModel.cellH + 4,
+  //       child: Column(
+  //         children: [
+  //           SizedBox(
+  //             height: 18,
+  //             child: Center(
+  //               child: Text(
+  //                 n.toString().padLeft(4, '0'),
+  //                 style: const TextStyle(
+  //                   fontSize: 13,
+  //                   fontWeight: FontWeight.bold,
+  //                 ),
+  //               ),
+  //             ),
+  //           ),
+  //           Expanded(
+  //             child: Padding(
+  //               padding: const EdgeInsets.only(left: 4),
+  //               child: TextField(
+  //                 focusNode: focusNode,
+  //                 controller: ctrl,
+  //
+  //                 enabled: !controller.model.block && !isBlocked,
+  //                 textAlign: TextAlign.center,
+  //                 textInputAction: TextInputAction.next,
+  //                 enableInteractiveSelection: false,
+  //                 autocorrect: false,
+  //                 keyboardType: TextInputType.number,
+  //                 style: const TextStyle(
+  //                   fontSize: 12,
+  //                   fontWeight: FontWeight.w700,
+  //                 ),
+  //                 decoration: InputDecoration(
+  //                   counterText: "",
+  //                   filled: true,
+  //                   fillColor: cellColor,
+  //                   isDense: true,
+  //                   contentPadding: EdgeInsets.zero,
+  //                   border: const OutlineInputBorder(
+  //                     borderRadius: BorderRadius.zero,
+  //                   ),
+  //                   focusedBorder: OutlineInputBorder(
+  //                     borderRadius: BorderRadius.zero,
+  //                     borderSide: BorderSide(
+  //                       color: isBlocked
+  //                           ? Colors.red
+  //                           : controller.model.isFPChecked && hasValue
+  //                           ? Colors.orange
+  //                           : Colors.green,
+  //                       width: 0.6,
+  //                     ),
+  //                   ),
+  //                 ),
+  //                 onChanged: (value) {
+  //                   final DateTime now = DateTime.now();
+  //
+  //                   print(value);
+  //                   if (!value.toString().isNumericOnly) {
+  //                     print("value : $value");
+  //                     return;
+  //                   }
+  //                   // ─────────────────────────────────────────────
+  //                   // Compute inter-change gap for THIS cell.
+  //                   // Gap = time between last onChanged and this one.
+  //                   // This works even when scanner bypasses onKeyEvent
+  //                   // because we measure directly in onChanged itself.
+  //                   // ─────────────────────────────────────────────
+  //                   final DateTime? lastChanged = _lastChangedTime[n];
+  //                   final int gapMs = lastChanged != null
+  //                       ? now.difference(lastChanged).inMilliseconds
+  //                       : 9999; // first change on this cell — no gap yet
+  //                   _lastChangedTime[n] = now; // always update rolling time
+  //
+  //                   debugPrint(
+  //                     "[onChanged][${now.toIso8601String()}] "
+  //                     "cell=$n | value='$value' | gapMs=$gapMs",
+  //                   );
+  //
+  //                   // ─────────────────────────────────────────────
+  //                   // 🚫 GATE 1: Scanner flag already set
+  //                   // ─────────────────────────────────────────────
+  //                   if (_isScannerInput) {
+  //                     debugPrint(
+  //                       "[onChanged] GATE1 BLOCKED _isScannerInput=true | "
+  //                       "cell=$n | value='$value'",
+  //                     );
+  //                     _unfocusCellAfterScan(n, ctrl);
+  //                     return;
+  //                   }
+  //
+  //                   // ─────────────────────────────────────────────
+  //                   // 🚫 GATE 2: Fast inter-change gap = scanner
+  //                   //
+  //                   // Gap between consecutive onChanged calls < 30ms
+  //                   // = scanner speed. Humans cannot type this fast.
+  //                   // Scanners fire chars every 5–20ms apart.
+  //                   //
+  //                   // This gate works regardless of whether the scanner
+  //                   // fires onKeyEvent or injects text directly via IME.
+  //                   // ─────────────────────────────────────────────
+  //                   if (gapMs < 30 && value.length >= 1) {
+  //                     _isScannerInput = true;
+  //                     debugPrint(
+  //                       "[onChanged] GATE2 BLOCKED fast gap | "
+  //                       "cell=$n | value='$value' | gapMs=$gapMs",
+  //                     );
+  //                     _unfocusCellAfterScan(n, ctrl);
+  //                     return;
+  //                   }
+  //
+  //                   // ─────────────────────────────────────────────
+  //                   // 🚫 GATE 3: SL prefix = barcode in wrong field
+  //                   //
+  //                   // Content-based fallback. Catches any SL barcode
+  //                   // that slipped past GATE 2 (e.g. very first char
+  //                   // pair had gap just over threshold).
+  //                   // ─────────────────────────────────────────────
+  //                   if (value.toUpperCase().startsWith("SL")) {
+  //                     _isScannerInput = true;
+  //                     debugPrint(
+  //                       "[onChanged] GATE3 BLOCKED SL prefix | "
+  //                       "cell=$n | value='$value'",
+  //                     );
+  //                     _unfocusCellAfterScan(n, ctrl);
+  //                     showInfoDialog(
+  //                       context: context,
+  //                       title: "Information",
+  //                       subtitle: "Click into claim box before scan",
+  //                     );
+  //                     return;
+  //                   }
+  //
+  //                   // Allow clearing
+  //                   if (value.isEmpty) {
+  //                     debugPrint("[onChanged] CLEAR | cell=$n");
+  //                     _lastChangedTime.remove(n);
+  //                     setState(() {
+  //                       controller.model.onCellChanged(
+  //                         n,
+  //                         value,
+  //                         context,
+  //                         controller.model.isFPChecked,
+  //                       );
+  //                     });
+  //                     return;
+  //                   }
+  //
+  //                   // ─────────────────────────────────────────────
+  //                   // 🚫 GATE 4: Only allow alphanumeric characters
+  //                   // ─────────────────────────────────────────────
+  //                   final String previous = ctrl.text;
+  //                   if (!RegExp(r'^[a-zA-Z0-9]+$').hasMatch(value)) {
+  //                     debugPrint(
+  //                       "[onChanged] GATE4 BLOCKED non-alphanumeric | "
+  //                       "cell=$n | value='$value'",
+  //                     );
+  //                     ctrl.text = previous;
+  //                     ctrl.selection = TextSelection.collapsed(
+  //                       offset: previous.length,
+  //                     );
+  //                     return;
+  //                   }
+  //
+  //                   // ─────────────────────────────────────────────
+  //                   // 🚫 GATE 5: Bulk insert / paste
+  //                   // diff > 1 = more than one char added at once
+  //                   // ─────────────────────────────────────────────
+  //                   final int charDiff = (value.length - previous.length).abs();
+  //                   if (charDiff > 1) {
+  //                     debugPrint(
+  //                       "[onChanged] GATE5 BLOCKED bulk insert | "
+  //                       "cell=$n | previous='$previous' | value='$value' | "
+  //                       "charDiff=$charDiff",
+  //                     );
+  //                     ctrl.text = previous;
+  //                     ctrl.selection = TextSelection.collapsed(
+  //                       offset: previous.length,
+  //                     );
+  //                     return;
+  //                   }
+  //
+  //                   // ✅ All gates passed — valid single alphanumeric char
+  //                   debugPrint(
+  //                     "[onChanged] ACCEPTED | cell=$n | value='$value'",
+  //                   );
+  //                   setState(() {
+  //                     controller.model.onCellChanged(
+  //                       n,
+  //                       value,
+  //                       context,
+  //                       controller.model.isFPChecked,
+  //                     );
+  //                   });
+  //                 },
+  //               ),
+  //             ),
+  //           ),
+  //         ],
+  //       ),
+  //     ),
+  //   );
+  // }
 
   Widget _cell(int n) {
     final ctrl = controller.model._getCtrl(
@@ -3241,6 +3649,7 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
           "[onKeyEvent][${keyEventTime.toIso8601String()}] "
               "BLOCKED scanner active | key='$keyLabel' | cell=$n",
         );
+
         return KeyEventResult.handled;
       }
 
@@ -3249,47 +3658,70 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
       // ─────────────────────────────────────────────────────
       final int start = controller.model.visibleStart;
       final int currentIndex = n - start;
+
       int newIndex = currentIndex;
 
       switch (key) {
         case LogicalKeyboardKey.arrowRight:
           newIndex++;
           break;
+
         case LogicalKeyboardKey.arrowLeft:
           newIndex--;
           break;
+
         case LogicalKeyboardKey.arrowDown:
           newIndex += _colCount;
           break;
+
         case LogicalKeyboardKey.arrowUp:
           newIndex -= _colCount;
           break;
+
         case LogicalKeyboardKey.enter:
           if (_isScannerInput || scanBuffer.isNotEmpty) {
             return KeyEventResult.handled;
           }
+
           newIndex += _colCount;
           break;
+
         default:
           return KeyEventResult.ignored;
       }
 
+      // ─────────────────────────────────────────────────────
+      // 🚫 Invalid navigation
+      // ─────────────────────────────────────────────────────
       if (newIndex < 0 || newIndex >= _totalNumbers) {
         return KeyEventResult.handled;
       }
 
+      // ─────────────────────────────────────────────────────
+      // ✅ Move focus
+      // ─────────────────────────────────────────────────────
       _cellFocusNodes[start + newIndex]?.requestFocus();
+
       return KeyEventResult.handled;
     };
 
+    // ─────────────────────────────────────────────────────
+    // Focus listener
+    // ─────────────────────────────────────────────────────
     focusNode.removeListener(_rebuildOnFocus);
     focusNode.addListener(_rebuildOnFocus);
 
+    // ─────────────────────────────────────────────────────
+    // Cell state
+    // ─────────────────────────────────────────────────────
     final bool hasValue = ctrl.text.isNotEmpty;
     final bool isFocused = focusNode.hasFocus;
     final bool isBlocked = _isScannerInput;
 
-    final Color cellColor =  controller.model.isFPChecked && hasValue
+    // ─────────────────────────────────────────────────────
+    // Cell background color
+    // ─────────────────────────────────────────────────────
+    final Color cellColor = controller.model.isFPChecked && hasValue
         ? Colors.yellow.shade300
         : isFocused
         ? Colors.green.shade200
@@ -3297,28 +3729,47 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
 
     return GestureDetector(
       onTap: () {
-        debugPrint("[onTap] cell=$n | isBlocked=$isBlocked");
+        debugPrint(
+          "[onTap] cell=$n | isBlocked=$isBlocked",
+        );
 
+        // ─────────────────────────────────────────────────
+        // Unlock scanner-blocked cell
+        // ─────────────────────────────────────────────────
         if (isBlocked) {
           _isScannerInput = false;
           scanBuffer = "";
-          _lastChangedTime.remove(n); // clear timing for this cell
-          debugPrint("[onTap] cell=$n | unlocked");
+          _lastChangedTime.remove(n);
+
+          debugPrint(
+            "[onTap] cell=$n | unlocked",
+          );
         }
 
+        // ─────────────────────────────────────────────────
+        // Request focus
+        // ─────────────────────────────────────────────────
         focusNode.requestFocus();
+
         setState(() {});
       },
+
       child: SizedBox(
         width: BettingGridModel.cellW,
         height: BettingGridModel.cellH + 4,
+
         child: Column(
           children: [
+            // ─────────────────────────────────────────────
+            // Number label
+            // ─────────────────────────────────────────────
             SizedBox(
               height: 18,
+
               child: Center(
                 child: Text(
                   n.toString().padLeft(4, '0'),
+
                   style: const TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.bold,
@@ -3326,170 +3777,310 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
                 ),
               ),
             ),
+
+            // ─────────────────────────────────────────────
+            // Input field
+            // ─────────────────────────────────────────────
             Expanded(
               child: Padding(
-                padding: const EdgeInsets.only(left: 4),
+                padding: const EdgeInsets.only(
+                  left: 4,
+                ),
+
                 child: TextField(
                   focusNode: focusNode,
+
                   controller: ctrl,
-                  enabled: !controller.model.block && !isBlocked,
+
+                  enabled:
+                  !controller.model.block &&
+                      !isBlocked,
+
                   textAlign: TextAlign.center,
-                  textInputAction: TextInputAction.next,
+
+                  textInputAction:
+                  TextInputAction.next,
+
                   enableInteractiveSelection: false,
+
                   autocorrect: false,
-                  keyboardType: TextInputType.text,
+
+                  // ─────────────────────────────────────
+                  // Numeric keyboard
+                  // ─────────────────────────────────────
+                  keyboardType:
+                  TextInputType.number,
+
+                  // ─────────────────────────────────────
+                  // Only digits
+                  // ─────────────────────────────────────
+                  inputFormatters: [
+                    FilteringTextInputFormatter.digitsOnly,
+                  ],
+
                   style: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
                   ),
+
                   decoration: InputDecoration(
                     counterText: "",
+
                     filled: true,
+
                     fillColor: cellColor,
+
                     isDense: true,
-                    contentPadding: EdgeInsets.zero,
-                    border: const OutlineInputBorder(
-                      borderRadius: BorderRadius.zero,
+
+                    contentPadding:
+                    EdgeInsets.zero,
+
+                    border:
+                    const OutlineInputBorder(
+                      borderRadius:
+                      BorderRadius.zero,
                     ),
-                    focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.zero,
-                      borderSide: BorderSide(
+
+                    focusedBorder:
+                    OutlineInputBorder(
+                      borderRadius:
+                      BorderRadius.zero,
+
+                      borderSide:
+                      BorderSide(
                         color: isBlocked
                             ? Colors.red
-                            : controller.model.isFPChecked && hasValue
+                            : controller
+                            .model
+                            .isFPChecked &&
+                            hasValue
                             ? Colors.orange
                             : Colors.green,
+
                         width: 0.6,
                       ),
                     ),
                   ),
-                  onChanged: (value) {
-                    final DateTime now = DateTime.now();
 
-                    // ─────────────────────────────────────────────
-                    // Compute inter-change gap for THIS cell.
-                    // Gap = time between last onChanged and this one.
-                    // This works even when scanner bypasses onKeyEvent
-                    // because we measure directly in onChanged itself.
-                    // ─────────────────────────────────────────────
-                    final DateTime? lastChanged = _lastChangedTime[n];
-                    final int gapMs = lastChanged != null
-                        ? now.difference(lastChanged).inMilliseconds
-                        : 9999; // first change on this cell — no gap yet
-                    _lastChangedTime[n] = now; // always update rolling time
+                  onChanged: (value) {
+                    final DateTime now =
+                    DateTime.now();
 
                     debugPrint(
-                      "[onChanged][${now.toIso8601String()}] "
-                          "cell=$n | value='$value' | gapMs=$gapMs",
+                      "[onChanged] "
+                          "cell=$n | value='$value'",
                     );
 
-                    // ─────────────────────────────────────────────
-                    // 🚫 GATE 1: Scanner flag already set
-                    // ─────────────────────────────────────────────
+                    // ─────────────────────────────────────
+                    // Compute inter-change gap
+                    // ─────────────────────────────────────
+                    final DateTime? lastChanged =
+                    _lastChangedTime[n];
+
+                    final int gapMs =
+                    lastChanged != null
+                        ? now
+                        .difference(
+                      lastChanged,
+                    )
+                        .inMilliseconds
+                        : 9999;
+
+                    // Always update rolling time
+                    _lastChangedTime[n] = now;
+
+                    debugPrint(
+                      "[onChanged]"
+                          "[${now.toIso8601String()}] "
+                          "cell=$n | "
+                          "value='$value' | "
+                          "gapMs=$gapMs",
+                    );
+
+                    // ─────────────────────────────────────
+                    // 🚫 GATE 1
+                    // Scanner flag already set
+                    // ─────────────────────────────────────
                     if (_isScannerInput) {
                       debugPrint(
-                        "[onChanged] GATE1 BLOCKED _isScannerInput=true | "
-                            "cell=$n | value='$value'",
+                        "[onChanged] "
+                            "GATE1 BLOCKED "
+                            "_isScannerInput=true | "
+                            "cell=$n | "
+                            "value='$value'",
                       );
-                      _unfocusCellAfterScan(n, ctrl);
+
+                      _unfocusCellAfterScan(
+                        n,
+                        ctrl,
+                      );
+
                       return;
                     }
 
-                    // ─────────────────────────────────────────────
-                    // 🚫 GATE 2: Fast inter-change gap = scanner
-                    //
-                    // Gap between consecutive onChanged calls < 30ms
-                    // = scanner speed. Humans cannot type this fast.
-                    // Scanners fire chars every 5–20ms apart.
-                    //
-                    // This gate works regardless of whether the scanner
-                    // fires onKeyEvent or injects text directly via IME.
-                    // ─────────────────────────────────────────────
-                    if (gapMs < 30 && value.length >= 1) {
+                    // ─────────────────────────────────────
+                    // 🚫 GATE 2
+                    // Fast input = scanner
+                    // ─────────────────────────────────────
+                    if (gapMs < 30 &&
+                        value.isNotEmpty) {
                       _isScannerInput = true;
+
                       debugPrint(
-                        "[onChanged] GATE2 BLOCKED fast gap | "
-                            "cell=$n | value='$value' | gapMs=$gapMs",
+                        "[onChanged] "
+                            "GATE2 BLOCKED fast gap | "
+                            "cell=$n | "
+                            "value='$value' | "
+                            "gapMs=$gapMs",
                       );
-                      _unfocusCellAfterScan(n, ctrl);
+
+                      _unfocusCellAfterScan(
+                        n,
+                        ctrl,
+                      );
+
                       return;
                     }
 
-                    // ─────────────────────────────────────────────
-                    // 🚫 GATE 3: SL prefix = barcode in wrong field
-                    //
-                    // Content-based fallback. Catches any SL barcode
-                    // that slipped past GATE 2 (e.g. very first char
-                    // pair had gap just over threshold).
-                    // ─────────────────────────────────────────────
-                    if (value.toUpperCase().startsWith("SL")) {
+                    // ─────────────────────────────────────
+                    // 🚫 GATE 3
+                    // SL prefix = barcode
+                    // ─────────────────────────────────────
+                    if (value
+                        .toUpperCase()
+                        .startsWith("SL")) {
                       _isScannerInput = true;
+
                       debugPrint(
-                        "[onChanged] GATE3 BLOCKED SL prefix | "
-                            "cell=$n | value='$value'",
+                        "[onChanged] "
+                            "GATE3 BLOCKED SL prefix | "
+                            "cell=$n | "
+                            "value='$value'",
                       );
-                      _unfocusCellAfterScan(n, ctrl);
+
+                      _unfocusCellAfterScan(
+                        n,
+                        ctrl,
+                      );
+
                       showInfoDialog(
                         context: context,
                         title: "Information",
-                        subtitle: "Click into claim box before scan",
+                        subtitle:
+                        "Click into claim box before scan",
                       );
+
                       return;
                     }
 
-                    // Allow clearing
+                    // ─────────────────────────────────────
+                    // ✅ Allow clearing
+                    // ─────────────────────────────────────
                     if (value.isEmpty) {
-                      debugPrint("[onChanged] CLEAR | cell=$n");
+                      debugPrint(
+                        "[onChanged] "
+                            "CLEAR | cell=$n",
+                      );
+
                       _lastChangedTime.remove(n);
+
                       setState(() {
                         controller.model.onCellChanged(
-                          n, value, context, controller.model.isFPChecked,
+                          n,
+                          value,
+                          context,
+                          controller.model.isFPChecked,
                         );
                       });
+
                       return;
                     }
 
-                    // ─────────────────────────────────────────────
-                    // 🚫 GATE 4: Only allow alphanumeric characters
-                    // ─────────────────────────────────────────────
-                    final String previous = ctrl.text;
-                    if (!RegExp(r'^[a-zA-Z0-9]+$').hasMatch(value)) {
+                    // ─────────────────────────────────────
+                    // Previous value
+                    // ─────────────────────────────────────
+                    final String previous =
+                        ctrl.text;
+
+                    // ─────────────────────────────────────
+                    // 🚫 GATE 4
+                    // ONLY DIGITS 0-9
+                    //
+                    // This blocks:
+                    // A-Z
+                    // a-z
+                    // @ # $ % & *
+                    // - + / .
+                    // spaces
+                    // etc.
+                    // ─────────────────────────────────────
+                    if (!RegExp(r'^[0-9]+$')
+                        .hasMatch(value)) {
                       debugPrint(
-                        "[onChanged] GATE4 BLOCKED non-alphanumeric | "
-                            "cell=$n | value='$value'",
+                        "[onChanged] "
+                            "GATE4 BLOCKED non-digit | "
+                            "cell=$n | "
+                            "value='$value'",
                       );
+
                       ctrl.text = previous;
-                      ctrl.selection = TextSelection.collapsed(
-                        offset: previous.length,
-                      );
+
+                      ctrl.selection =
+                          TextSelection.collapsed(
+                            offset:
+                            previous.length,
+                          );
+
                       return;
                     }
 
-                    // ─────────────────────────────────────────────
-                    // 🚫 GATE 5: Bulk insert / paste
-                    // diff > 1 = more than one char added at once
-                    // ─────────────────────────────────────────────
-                    final int charDiff = (value.length - previous.length).abs();
+                    // ─────────────────────────────────────
+                    // 🚫 GATE 5
+                    // Prevent paste / bulk insertion
+                    // ─────────────────────────────────────
+                    final int charDiff =
+                    (value.length -
+                        previous.length)
+                        .abs();
+
                     if (charDiff > 1) {
                       debugPrint(
-                        "[onChanged] GATE5 BLOCKED bulk insert | "
-                            "cell=$n | previous='$previous' | value='$value' | "
+                        "[onChanged] "
+                            "GATE5 BLOCKED bulk insert | "
+                            "cell=$n | "
+                            "previous='$previous' | "
+                            "value='$value' | "
                             "charDiff=$charDiff",
                       );
+
                       ctrl.text = previous;
-                      ctrl.selection = TextSelection.collapsed(
-                        offset: previous.length,
-                      );
+
+                      ctrl.selection =
+                          TextSelection.collapsed(
+                            offset:
+                            previous.length,
+                          );
+
                       return;
                     }
 
-                    // ✅ All gates passed — valid single alphanumeric char
+                    // ─────────────────────────────────────
+                    // ✅ ACCEPTED
+                    // Only digit 0-9
+                    // ─────────────────────────────────────
                     debugPrint(
-                      "[onChanged] ACCEPTED | cell=$n | value='$value'",
+                      "[onChanged] "
+                          "ACCEPTED DIGIT | "
+                          "cell=$n | "
+                          "value='$value'",
                     );
+
                     setState(() {
                       controller.model.onCellChanged(
-                        n, value, context, controller.model.isFPChecked,
+                        n,
+                        value,
+                        context,
+                        controller.model.isFPChecked,
                       );
                     });
                   },
@@ -3501,7 +4092,6 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
       ),
     );
   }
-
   // ─────────────────────────────────────────────────────────────────────────
   // _unfocusCellAfterScan
   // Clears text, disables cell, removes focus → cell turns red.
@@ -3537,7 +4127,7 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
     );
   }
 
-// ─────────────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
   // Per-header onChanged timestamp tracking.
   // Key: col number. Value: time of last onChanged call for that header.
   // Detects scanner injection even when onKeyEvent is bypassed by IME.
@@ -3548,7 +4138,7 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
   Widget _editableHeader(int col) {
     controller.model.headerCtrls.putIfAbsent(
       col,
-          () => TextEditingController(),
+      () => TextEditingController(),
     );
 
     _headerFocusNodes.putIfAbsent(col, () {
@@ -3618,8 +4208,10 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
           height: BettingGridModel.headerH - 16,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 150),
-            color:  focusNode.hasFocus
-                ? Colors.green.shade200    // 🟢 focused
+            color: focusNode.hasFocus
+                ? Colors
+                      .green
+                      .shade200 // 🟢 focused
                 : const Color.fromRGBO(52, 73, 95, 1), // ⬛ default
             child: TextField(
               focusNode: focusNode,
@@ -3664,7 +4256,7 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
 
                 debugPrint(
                   "[header onChanged][${now.toIso8601String()}] "
-                      "col=$col | value='$value' | gapMs=$gapMs",
+                  "col=$col | value='$value' | gapMs=$gapMs",
                 );
 
                 // ─────────────────────────────────────────────
@@ -3687,7 +4279,7 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
                   _isHeaderScannerInput = true;
                   debugPrint(
                     "[header onChanged] GATE2 BLOCKED fast gap | "
-                        "col=$col | value='$value' | gapMs=$gapMs",
+                    "col=$col | value='$value' | gapMs=$gapMs",
                   );
                   _unfocusHeaderAfterScan(col, ctrl);
                   return;
@@ -3700,7 +4292,7 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
                   _isHeaderScannerInput = true;
                   debugPrint(
                     "[header onChanged] GATE3 BLOCKED SL prefix | "
-                        "col=$col | value='$value'",
+                    "col=$col | value='$value'",
                   );
                   _unfocusHeaderAfterScan(col, ctrl);
                   showInfoDialog(
@@ -3715,7 +4307,10 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
                 if (value.isEmpty) {
                   _lastHeaderChangedTime.remove(col);
                   controller.model.applyColumnValue(
-                    col, value, context, () => setState(() {}),
+                    col,
+                    value,
+                    context,
+                    () => setState(() {}),
                   );
                   return;
                 }
@@ -3727,7 +4322,7 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
                 if (!RegExp(r'^[0-9]+$').hasMatch(value)) {
                   debugPrint(
                     "[header onChanged] GATE4 BLOCKED non-digit | "
-                        "col=$col | value='$value'",
+                    "col=$col | value='$value'",
                   );
                   ctrl.text = previous;
                   ctrl.selection = TextSelection.collapsed(
@@ -3743,7 +4338,7 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
                 if (charDiff > 1) {
                   debugPrint(
                     "[header onChanged] GATE5 BLOCKED bulk insert | "
-                        "col=$col | previous='$previous' | value='$value'",
+                    "col=$col | previous='$previous' | value='$value'",
                   );
                   ctrl.text = previous;
                   ctrl.selection = TextSelection.collapsed(
@@ -3757,7 +4352,10 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
                   "[header onChanged] ACCEPTED | col=$col | value='$value'",
                 );
                 controller.model.applyColumnValue(
-                  col, value, context, () => setState(() {}),
+                  col,
+                  value,
+                  context,
+                  () => setState(() {}),
                 );
               },
             ),
@@ -3780,7 +4378,8 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
     _headerFocusNodes[col]?.unfocus();
     setState(() {});
   }
-// ─────────────────────────────────────────────────────────────────────────
+
+  // ─────────────────────────────────────────────────────────────────────────
   // Per-row header onChanged timestamp tracking.
   // Key: row number. Value: time of last onChanged call for that row header.
   // ─────────────────────────────────────────────────────────────────────────
@@ -3857,8 +4456,10 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 150),
                 decoration: BoxDecoration(
-                  color:  focusNode.hasFocus
-                      ? Colors.green.shade200    // 🟢 focused
+                  color: focusNode.hasFocus
+                      ? Colors
+                            .green
+                            .shade200 // 🟢 focused
                       : const Color.fromRGBO(52, 73, 95, 1), // ⬛ default
                   border: Border.all(
                     color: Colors.black.withOpacity(0.35),
@@ -3896,7 +4497,7 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
 
                     debugPrint(
                       "[row onChanged][${now.toIso8601String()}] "
-                          "row=$row | value='$value' | gapMs=$gapMs",
+                      "row=$row | value='$value' | gapMs=$gapMs",
                     );
 
                     // ─────────────────────────────────────────────
@@ -3917,7 +4518,7 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
                       _isRowScannerInput = true;
                       debugPrint(
                         "[row onChanged] GATE2 BLOCKED fast gap | "
-                            "row=$row | value='$value' | gapMs=$gapMs",
+                        "row=$row | value='$value' | gapMs=$gapMs",
                       );
                       _unfocusRowAfterScan(row, ctrl);
                       return;
@@ -3930,7 +4531,7 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
                       _isRowScannerInput = true;
                       debugPrint(
                         "[row onChanged] GATE3 BLOCKED SL prefix | "
-                            "row=$row | value='$value'",
+                        "row=$row | value='$value'",
                       );
                       _unfocusRowAfterScan(row, ctrl);
                       showInfoDialog(
@@ -3945,7 +4546,10 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
                     if (value.isEmpty) {
                       _lastRowChangedTime.remove(row);
                       controller.model.applyRowValue(
-                        row, value, context, () => setState(() {}),
+                        row,
+                        value,
+                        context,
+                        () => setState(() {}),
                       );
                       return;
                     }
@@ -3957,7 +4561,7 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
                     if (!RegExp(r'^[0-9]+$').hasMatch(value)) {
                       debugPrint(
                         "[row onChanged] GATE4 BLOCKED non-digit | "
-                            "row=$row | value='$value'",
+                        "row=$row | value='$value'",
                       );
                       ctrl.text = previous;
                       ctrl.selection = TextSelection.collapsed(
@@ -3973,7 +4577,7 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
                     if (charDiff > 1) {
                       debugPrint(
                         "[row onChanged] GATE5 BLOCKED bulk insert | "
-                            "row=$row | previous='$previous' | value='$value'",
+                        "row=$row | previous='$previous' | value='$value'",
                       );
                       ctrl.text = previous;
                       ctrl.selection = TextSelection.collapsed(
@@ -3987,7 +4591,10 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
                       "[row onChanged] ACCEPTED | row=$row | value='$value'",
                     );
                     controller.model.applyRowValue(
-                      row, value, context, () => setState(() {}),
+                      row,
+                      value,
+                      context,
+                      () => setState(() {}),
                     );
                   },
                 ),
@@ -4012,6 +4619,7 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
     _rowFocusNodes[row]?.unfocus();
     setState(() {});
   }
+
   // ===================== RIGHT TOTALS =====================
 
   Widget _rowTotals(int row) {
@@ -4288,91 +4896,87 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
             onTap: () async {
               print("Ticket Print");
 
-              final result = await controller.handlePrint(
-                context,
-                widget.slot,
-                slots,
-                widget.id,
-              );
+              if (_isPrinting) return;
 
-              if (result["success"] == true) {
-                return;
-              }
+              _isPrinting = true;
 
-              final failedAt = result["failedAt"];
+              try {
+                final result = await controller.handlePrint(
+                  context,
+                  widget.slot,
+                  slots,
+                  widget.id,
+                );
 
-              switch (failedAt) {
-                case "game_not_started":
-                  showInfoDialog(
-                    context: context,
-                    title: "Game Not Started",
-                    subtitle: "Game will start at 09:45 AM. Please wait.",
+                if (!mounted) return;
+
+                if (result["success"] == true) return;
+
+                final failedAt =
+                    result["failedAt"]?.toString().trim().isNotEmpty == true
+                    ? result["failedAt"].toString()
+                    : "unknown";
+
+                switch (failedAt) {
+                  case "game_not_started":
+                    _showError(
+                      "Game Not Started",
+                      "Game will start at 09:45 AM. Please wait.",
+                    );
+                    break;
+
+                  case "game_closed":
+                    _showError(
+                      "Game Closed",
+                      "Today's game time is over. Please come tomorrow.",
+                    );
+                    break;
+
+                  case "slot_missing":
+                    _showError(
+                      "Slot Required",
+                      "Please select a draw time slot.",
+                    );
+                    break;
+
+                  case "empty_selection":
+                    _showError(
+                      "No Quantity",
+                      "Enter quantity for at least one number.",
+                    );
+                    break;
+
+                  case "no_selection":
+                    _showError("No Numbers", "No valid numbers selected.");
+                    break;
+
+                  case "server_error":
+                    _showError(
+                      "Server Error",
+                      "Server error occurred. Please try again.",
+                    );
+                    break;
+
+                  case "api_rejected":
+                    _showError(
+                      "Request Failed",
+                      result["message"]?.toString() ??
+                          "Request rejected. Please try again.",
+                    );
+                    break;
+
+                  default:
+                    _showError("Error", "Unknown error occurred.");
+                }
+              } catch (e) {
+                if (mounted) {
+                  _showError(
+                    "Unexpected Error",
+                    "Something went wrong. Please try again.",
                   );
-                  break;
-
-                case "game_closed":
-                  showInfoDialog(
-                    context: context,
-                    title: "Game Closed",
-                    subtitle:
-                        "Today's game time is over. Please come tomorrow.",
-                  );
-                  break;
-
-                case "slot_missing":
-                  showInfoDialog(
-                    context: context,
-                    title: "Slot Required",
-                    subtitle: "Please select a draw time slot.",
-                  );
-                  break;
-
-                case "empty_selection":
-                  showInfoDialog(
-                    context: context,
-                    title: "No Quantity",
-                    subtitle: "Enter quantity for at least one number.",
-                  );
-                  break;
-
-                case "no_selection":
-                  showInfoDialog(
-                    context: context,
-                    title: "No Numbers",
-                    subtitle: "No valid numbers selected.",
-                  );
-                  break;
-
-                case "server_error":
-                  showInfoDialog(
-                    context: context,
-                    title: "Server Error",
-                    subtitle: "Server error occurred. Please try again.",
-                  );
-                  break;
-
-                case "api_rejected":
-                  showInfoDialog(
-                    context: context,
-                    title: "Request Failed",
-                    subtitle: result["message"],
-                  );
-                  break;
-
-                case "exception":
-                  showInfoDialog(
-                    context: context,
-                    title: "Unexpected Error",
-                    subtitle: "Something went wrong. Please try again.",
-                  );
-                  break;
-
-                default:
-                  showInfoDialog(
-                    context: context,
-                    title: "Error",
-                    subtitle: "Unknown error occurred.",
-                  );
+                }
+              } finally {
+                _isPrinting = false;
               }
             },
           ),
@@ -4425,7 +5029,6 @@ class _BettingGridScreenState extends State<BettingGridScreen> {
 
                 // Manual Enter
                 onSubmitted: (value) {
-
                   final input = value.trim();
                   if (input.isNotEmpty) {
                     _handleClaim();
